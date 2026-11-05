@@ -8,6 +8,7 @@ public class ApiException extends RuntimeException {
   private final HttpStatus status;
   private final String code;
 
+  // Tạo lỗi nghiệp vụ với HTTP status, code ổn định và mô tả chi tiết
   public ApiException(HttpStatus status, String code, String detail) {
     super(detail);
     this.status = status;

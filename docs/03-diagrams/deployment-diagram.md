@@ -38,7 +38,7 @@ flowchart TB
     FE -- "depends_on healthy" --> GW
 ```
 
-Chỉ `api-gateway :8080`, `frontend :3000`, UI RabbitMQ `:15672`, Grafana `:3001` (và Postgres/Redis cho debug) được publish ra host. Cổng gRPC không publish.
+Chỉ `api-gateway :8080`, `frontend :3000`, UI RabbitMQ `:15672`, Grafana `:3001` (và Postgres/Redis cho debug) được publish ra host, chỉ bind `127.0.0.1`. Cổng gRPC không publish.
 
 ## 2. Pipeline CI/CD
 

@@ -25,6 +25,8 @@
     <google-java-format.version>1.36.1</google-java-format.version>
     <surefire.version>3.6.0</surefire.version>
     <uuid-creator.version>6.1.1</uuid-creator.version>
+    <springdoc.version>3.1.1</springdoc.version>
+    <archunit.version>1.5.1</archunit.version>
   </properties>
 
   <dependencyManagement>
@@ -40,6 +42,16 @@
         <groupId>com.github.f4b6a3</groupId>
         <artifactId>uuid-creator</artifactId>
         <version>${uuid-creator.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.springdoc</groupId>
+        <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        <version>${springdoc.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.tngtech.archunit</groupId>
+        <artifactId>archunit-junit5</artifactId>
+        <version>${archunit.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>

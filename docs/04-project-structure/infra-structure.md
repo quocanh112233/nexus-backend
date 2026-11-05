@@ -40,7 +40,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
-    ports: ["5432:5432"]
+    ports: ["127.0.0.1:${POSTGRES_PORT:-5432}:5432"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d nexus"]
       interval: 5s
@@ -51,7 +51,7 @@ services:
       - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
       - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
       - ./rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
-    ports: ["15672:15672"]
+    ports: ["127.0.0.1:15672:15672"]
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
@@ -63,7 +63,7 @@ services:
   otel-lgtm:
     image: grafana/otel-lgtm
     profiles: ["observability"]
-    ports: ["3001:3000", "4317:4317", "4318:4318"]
+    ports: ["127.0.0.1:3001:3000", "127.0.0.1:4317:4317", "127.0.0.1:4318:4318"]
 volumes:
   pgdata:
 ```
@@ -147,7 +147,7 @@ Kết quả: `messaging_svc` không đọc được `community.*` (thử `SELECT
 | `CLOUDINARY_FOLDER_ROOT` | identity, messaging | Thư mục gốc, ví dụ `nexus-dev` (local) / `nexus` (demo) để tách dữ liệu khi dùng chung 1 account |
 | `PRESENCE_SERVICE_TOKEN` | presence (gửi), community + messaging (kiểm, allowlist RPC) | Token gRPC không có user context (P-36) |
 | `COMMUNITY_GRPC_TARGET`, `MESSAGING_GRPC_TARGET`, `IDENTITY_GRPC_TARGET` | service gọi gRPC | Dạng `dns:///community-service:9092` |
-| `CORS_ALLOWED_ORIGINS` | api-gateway | |
+| `CORS_ALLOWED_ORIGINS` | api-gateway, identity-service | identity-service dùng để kiểm Origin ở `/auth/refresh` (so khớp chuỗi chính xác) |
 | `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL` | frontend (build arg) | |
 | `TAG`, `FRONTEND_TAG`, `FRONTEND_DIR` | compose | |
 | `OTEL_ENDPOINT` | mọi service | Để trống khi tắt observability |

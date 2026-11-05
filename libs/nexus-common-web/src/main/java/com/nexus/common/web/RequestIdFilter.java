@@ -17,6 +17,7 @@ public class RequestIdFilter extends OncePerRequestFilter {
 
   private static final Pattern SAFE = Pattern.compile("[A-Za-z0-9._-]{1,64}");
 
+  // Lấy hoặc sinh X-Request-Id, đưa vào MDC và header phản hồi
   @Override
   protected void doFilterInternal(
       HttpServletRequest request, HttpServletResponse response, FilterChain chain)

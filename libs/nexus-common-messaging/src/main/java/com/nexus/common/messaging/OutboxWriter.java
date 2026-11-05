@@ -10,6 +10,7 @@ public class OutboxWriter {
   private final OutboxEventDao dao;
   private final Clock clock;
 
+  // Tạo writer với DAO outbox và đồng hồ hệ thống
   public OutboxWriter(OutboxEventDao dao, Clock clock) {
     this.dao = dao;
     this.clock = clock;

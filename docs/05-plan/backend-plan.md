@@ -2,7 +2,7 @@
 
 File này là checklist công việc backend theo phase và theo service; mỗi mục có tiêu chí hoàn thành, mỗi phase ghi kiến thức cần biết trước, tài liệu nên đọc và khái niệm microservice/DDD sẽ học. Thứ tự phase khớp [roadmap.md](roadmap.md); lộ trình khái niệm + thí nghiệm ở [learning-path.md](learning-path.md).
 
-Ký hiệu: `[ ]` việc cần làm — "→" tiêu chí xong.
+Ký hiệu: `[ ]` việc cần làm, `[x]` đã xong — "→" tiêu chí xong.
 
 ---
 
@@ -12,12 +12,12 @@ Ký hiệu: `[ ]` việc cần làm — "→" tiêu chí xong.
 **Đọc:** [Docker Compose](https://docs.docker.com/compose/), [Compose startup order](https://docs.docker.com/compose/how-tos/startup-order/), [Maven multi-module](https://maven.apache.org/guides/mini/guide-multiple-modules.html), [GitHub Actions quickstart](https://docs.github.com/en/actions/writing-workflows/quickstart).
 **Khái niệm học:** database-per-service bằng schema + quyền DB; hạ tầng như code.
 
-- [ ] Parent `pom.xml` + Maven wrapper + module rỗng `proto`, `libs/*` → `./mvnw verify` chạy xanh.
-- [ ] `infra/compose.infra.yaml`: Postgres (init script), Redis, RabbitMQ có healthcheck → `docker compose up -d` cả 3 `healthy`.
-- [ ] Init script tạo 4 schema + 4 user → đăng nhập `messaging_svc`, `SELECT * FROM community.x` bị `permission denied`.
-- [ ] `.env.example`, `.dockerignore`, `infra/scripts/gen-jwt-keys.sh` → làm theo README từ máy sạch được.
-- [ ] Spotless cấu hình ở parent → `./mvnw spotless:check` chạy trong CI.
-- [ ] Workflow `proto.yml` rỗng + reusable `_backend-service.yml` khung (xem [devops-plan.md](devops-plan.md)) → CI xanh trên PR rỗng.
+- [x] Parent `pom.xml` + Maven wrapper + module rỗng `proto`, `libs/*` → `./mvnw verify` chạy xanh.
+- [x] `infra/compose.infra.yaml`: Postgres (init script), Redis, RabbitMQ có healthcheck → `docker compose up -d` cả 3 `healthy`.
+- [x] Init script tạo 4 schema + 4 user → đăng nhập `messaging_svc`, `SELECT * FROM community.x` bị `permission denied`.
+- [x] `.env.example`, `.dockerignore`, `infra/scripts/gen-jwt-keys.sh` → làm theo README từ máy sạch được.
+- [x] Spotless cấu hình ở parent → `./mvnw spotless:check` chạy trong CI.
+- [x] Workflow `proto.yml` rỗng + reusable `_backend-service.yml` khung (xem [devops-plan.md](devops-plan.md)) → CI xanh trên PR rỗng.
 
 **Demo:** `docker compose up -d` + RabbitMQ UI `:15672` + chứng minh cách ly schema.
 
@@ -31,19 +31,19 @@ Ký hiệu: `[ ]` việc cần làm — "→" tiêu chí xong.
 
 | # | Việc | Tiêu chí xong |
 |---|------|---------------|
-| 1 | Khung `identity-service` theo [backend-structure.md](../04-project-structure/backend-structure.md) + `ArchitectureTest` | ArchUnit fail nếu `domain` import Spring |
-| 2 | VO `Email`, `Username`, `DisplayName`, `PasswordHash`; aggregate `User` | Unit test VO (hợp lệ/không hợp lệ) |
-| 3 | Flyway `V1__init.sql` (`users`, `refresh_tokens`, `outbox_event`); lớp persistence `UserJpaEntity`, `UserDao`, `UserMapper`, `UserRepositoryImpl` (ADR-009) | Service khởi động, `flyway_schema_history` trong schema `identity`; IT Testcontainers cho `UserRepositoryImpl`; unit test round-trip `UserMapper` |
-| 4 | `RegisterUserUseCase` + `POST /auth/register` (FR-001) | IT Testcontainers: trùng username đồng thời → một `201`, một `409` |
-| 5 | Ký JWT RS256 + `/.well-known/jwks.json` | Token verify được bằng JWKS trong test |
-| 6 | Login / refresh rotation / reuse detection / logout (FR-002..FR-004) | IT: dùng lại refresh token cũ → 401 và cả family bị revoke |
-| 7 | Profile `GET/PATCH /users/me`, `GET /users/{id}`, `GET /users?ids=`, `GET /users/by-username/{u}` (FR-006, FR-007, FR-010) | `@WebMvcTest` + IT |
-| 8 | Port `UploadSigner` + `CloudinaryUploadSigner` (ACL), avatar signature + lưu (FR-008, FR-100, FR-102) | `publicId` sai folder → 400; test với signer giả, 1 test thủ công với Cloudinary thật |
-| 9 | Outbox: ghi `UserRegistered`, `UserProfileUpdated` vào `outbox_event` (chưa relay) | Bảng có dòng sau đăng ký (relay làm ở P5) |
-| 10 | Problem Details + `libs/nexus-common-web` | Lỗi validate trả đúng format [api-conventions.md](../02-architecture/api-conventions.md#4-định-dạng-lỗi) |
-| 11 | Log JSON, actuator liveness/readiness, springdoc | `/swagger-ui.html` chạy; log có `requestId` |
-| 12 | `Dockerfile` + service trong `compose.app.yaml` | `docker compose up` → identity `healthy`, non-root (`docker exec id`) |
-| 13 | Workflow `identity-service.yml` | PR chạy test + build image + Trivy; main push GHCR |
+| [x] 1 | Khung `identity-service` theo [backend-structure.md](../04-project-structure/backend-structure.md) + `ArchitectureTest` | ArchUnit fail nếu `domain` import Spring |
+| [x] 2 | VO `Email`, `Username`, `DisplayName`, `PasswordHash`; aggregate `User` | Unit test VO (hợp lệ/không hợp lệ) |
+| [x] 3 | Flyway `V1__init.sql` (`users`, `refresh_tokens`, `outbox_event`); lớp persistence `UserJpaEntity`, `UserDao`, `UserMapper`, `UserRepositoryImpl` (ADR-009) | Service khởi động, `flyway_schema_history` trong schema `identity`; IT Testcontainers cho `UserRepositoryImpl`; unit test round-trip `UserMapper` |
+| [x] 4 | `RegisterUserUseCase` + `POST /auth/register` (FR-001) | IT Testcontainers: trùng username đồng thời → một `201`, một `409` |
+| [x] 5 | Ký JWT RS256 + `/.well-known/jwks.json` | Token verify được bằng JWKS trong test |
+| [x] 6 | Login / refresh rotation / reuse detection / logout (FR-002..FR-004) | IT: dùng lại refresh token cũ → 401 và cả family bị revoke |
+| [x] 7 | Profile `GET/PATCH /users/me`, `GET /users/{id}`, `GET /users?ids=`, `GET /users/by-username/{u}` (FR-006, FR-007, FR-010) | `@WebMvcTest` + IT |
+| [x] 8 | Port `UploadSigner` + `CloudinaryUploadSigner` (ACL), avatar signature + lưu (FR-008, FR-100, FR-102) | `publicId` sai folder → 400; test với signer giả, 1 test thủ công với Cloudinary thật (chờ điền key, xem [journal.md](../journal.md)) |
+| [x] 9 | Outbox: ghi `UserRegistered`, `UserProfileUpdated` vào `outbox_event` (chưa relay) | Bảng có dòng sau đăng ký (relay làm ở P5) |
+| [x] 10 | Problem Details + `libs/nexus-common-web` | Lỗi validate trả đúng format [api-conventions.md](../02-architecture/api-conventions.md#4-định-dạng-lỗi) |
+| [x] 11 | Log JSON, actuator liveness/readiness, springdoc | `/swagger-ui.html` chạy; log có `requestId` |
+| [x] 12 | `Dockerfile` + service trong `compose.app.yaml` | `docker compose up` → identity `healthy`, non-root (`docker exec id`) |
+| [x] 13 | Workflow `identity-service.yml` | PR chạy test + build image + Trivy; main push GHCR (chờ xác nhận CI sau khi push) |
 
 **Demo:** đăng ký/đăng nhập trên frontend tối giản (gọi thẳng identity :8081 ở phase này), xem image trên GHCR.
 

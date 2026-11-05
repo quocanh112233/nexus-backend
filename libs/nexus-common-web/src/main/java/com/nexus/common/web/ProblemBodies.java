@@ -18,10 +18,12 @@ public final class ProblemBodies {
 
   private static final JsonMapper MAPPER = JsonMapper.builder().build();
 
+  // Chặn khởi tạo vì lớp chỉ chứa hàm static
   private ProblemBodies() {}
 
   // Dựng body Problem Details theo api-conventions mục 4, instance null thì bỏ qua
-  static Map<String, Object> body(HttpStatus status, String code, String detail, String instance) {
+  public static Map<String, Object> body(
+      HttpStatus status, String code, String detail, String instance) {
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("type", "https://nexus.dev/errors/" + code.toLowerCase(Locale.ROOT).replace('_', '-'));
     body.put("title", title(code));

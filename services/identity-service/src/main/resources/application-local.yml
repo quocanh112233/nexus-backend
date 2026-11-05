@@ -1,0 +1,10 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/nexus?currentSchema=identity
+    username: identity_svc
+    password: ${DB_PASSWORD:identity_svc}
+
+logging:
+  structured:
+    format:
+      console:

@@ -1,3 +1,4 @@
 name: nexus
 include:
   - infra/compose.infra.yaml
+  - infra/compose.app.yaml

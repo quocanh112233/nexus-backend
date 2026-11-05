@@ -17,7 +17,7 @@ File này mô tả cơ chế xác thực, phân quyền, validate tại trust bo
 
 | Thành phần | Chi tiết |
 |-----------|---------|
-| Ký | RS256, khóa riêng chỉ ở Identity (`JWT_PRIVATE_KEY` từ secret), `kid` trong header để xoay khóa |
+| Ký | RS256, khóa riêng chỉ ở Identity (`JWT_PRIVATE_KEY_PATH` từ secret), `kid` trong header để xoay khóa |
 | Verify | Spring Security OAuth2 Resource Server, `jwk-set-uri: http://identity-service:8081/.well-known/jwks.json` (cache) |
 | Access token | 15 phút, giữ trong bộ nhớ frontend (không localStorage → giảm rủi ro XSS đánh cắp lâu dài) |
 | Refresh token | 256-bit ngẫu nhiên, DB lưu SHA-256, 30 ngày, cookie `HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth` |
