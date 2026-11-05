@@ -1,0 +1,12 @@
+name: proto
+on:
+  push:
+    branches: [main]
+    paths: ["proto/**"]
+  pull_request:
+    paths: ["proto/**"]
+jobs:
+  buf:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "buf lint/breaking được thêm ở P4"

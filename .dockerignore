@@ -1,0 +1,7 @@
+**/target
+.git
+docs
+infra/secrets
+.env*
+*.pem
+compose.override.yaml

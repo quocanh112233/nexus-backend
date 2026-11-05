@@ -1,0 +1,12 @@
+target/
+.env
+infra/secrets/
+compose.override.yaml
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+.DS_Store
+*.pem
