@@ -20,6 +20,10 @@ spring:
         default_schema: identity
 
 management:
+  # Lấy mẫu 100% trace ở local; exporter OTLP chỉ bật khi đặt OTEL_EXPORTER_OTLP_ENDPOINT
+  tracing:
+    sampling:
+      probability: 1.0
   server:
     port: 8181
   endpoint:

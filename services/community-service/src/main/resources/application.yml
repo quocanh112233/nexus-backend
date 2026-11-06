@@ -1,0 +1,54 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: community-service
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+  flyway:
+    schemas: community
+    default-schema: community
+    create-schemas: true
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: community
+
+management:
+  # Lấy mẫu 100% trace ở local; exporter OTLP chỉ bật khi đặt OTEL_EXPORTER_OTLP_ENDPOINT
+  tracing:
+    sampling:
+      probability: 1.0
+  server:
+    port: 8182
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+app:
+  jwt:
+    jwks-uri: ${JWKS_URI}
+    jwks-connect-timeout: ${JWKS_CONNECT_TIMEOUT:2s}
+    jwks-read-timeout: ${JWKS_READ_TIMEOUT:5s}
+    issuer: nexus-identity
+    audience: nexus
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  structured:
+    format:
+      console: ecs

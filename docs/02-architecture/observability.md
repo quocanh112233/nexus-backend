@@ -12,17 +12,31 @@ File này mô tả cách quan sát hệ thống ở mức đủ học và đủ 
 | `grafana/otel-lgtm` (1 container, profile `observability`) | OTel Collector nhận OTLP → Loki (log), Tempo (trace), Prometheus (metric) → Grafana UI `http://localhost:3001` |
 | RabbitMQ Prometheus plugin | Metric queue (độ dài, tốc độ, unacked) |
 
-Mọi service đặt `OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-lgtm:4318`. Profile `observability` tắt → exporter bị tắt, log vẫn in JSON ra stdout (`docker compose logs`).
+Bật bằng `OTEL_ENDPOINT=http://otel-lgtm:4318 docker compose --profile observability up -d --build --wait` (compose map `OTEL_ENDPOINT` vào `OTEL_EXPORTER_OTLP_ENDPOINT` của từng service). `OTEL_ENDPOINT` trống → exporter log, trace, metric đều tắt, log vẫn in JSON ra stdout (`docker compose logs`).
 
 ## 2. Log
 
 | Quy ước | Chi tiết |
 |--------|---------|
 | Định dạng | JSON (Spring Boot structured logging `logging.structured.format.console=ecs`) |
-| Field bắt buộc | `timestamp, level, service, traceId, spanId, requestId, userId?, message` |
+| Field bắt buộc | `service.name` (Loki label `service_name`), `requestId`, `traceId`, `spanId`, `level`, `message`, thời gian; `userId` chưa được ghi vì chưa có MDC `userId` (dự kiến P3) |
 | Mức | `INFO` sự kiện nghiệp vụ quan trọng (đăng ký, tạo server); `WARN` lỗi phía client lặp lại, message vào DLQ; `ERROR` lỗi hệ thống |
 | Cấm | Password, token, chữ ký, nội dung tin nhắn đầy đủ |
-| Tìm kiếm | Grafana → Loki: `{service="messaging-service"} |= "traceId=..."`; từ trace nhảy sang log và ngược lại |
+| Tìm kiếm | Grafana → Loki: `{service_name="community-service"} | requestId="..."` hoặc `{service_name=~".+"} | traceId="..."`; từ trace nhảy sang log và ngược lại |
+
+### Cài đặt P2
+
+| Mục | Giá trị |
+|-----|---------|
+| Dependency | `libs/nexus-common-observability` (cả identity, community, api-gateway dùng): `spring-boot-starter-opentelemetry` (Boot 4.1.2, kéo `micrometer-registry-otlp`, `micrometer-tracing-bridge-otel`, `opentelemetry-exporter-otlp`) + `io.opentelemetry.instrumentation:opentelemetry-logback-appender-1.0:2.28.0-alpha` |
+| Log | `logback-spring.xml` trong lib: console JSON (ECS) + `OpenTelemetryAppender` (`captureMdcAttributes=*`), nối vào `OpenTelemetry` bean bằng `OtelLogAppenderAutoConfiguration` |
+| Bật/tắt | `OtelExportEnvironmentPostProcessor`: `OTEL_EXPORTER_OTLP_ENDPOINT` (hoặc `otel.exporter.otlp.endpoint`) trống hoặc không đặt → `management.otlp.metrics.export.enabled`, `management.tracing.export.otlp.enabled`, `management.logging.export.otlp.enabled` = `false` (test và compose không profile không kết nối đi đâu; cờ đặt tường minh ở nơi khác như system property, env, yml thắng vì property source này ưu tiên thấp nhất); có giá trị thì Boot tự thêm `/v1/logs`, `/v1/traces`, `/v1/metrics` |
+| Sampling | `management.tracing.sampling.probability=1.0` trong `application.yml` mỗi service |
+| Resource | `service.name` = `spring.application.name` (`identity-service`, `community-service`, `api-gateway`); Loki gắn thành label `service_name` |
+| Log theo request | Service servlet ghi một dòng `method path status ms` trong `RequestIdFilter` (MDC `requestId`, `traceId`); gateway ghi `requestId=...` trong chính dòng log của `RequestIdFilter` (reactive không có MDC) |
+| Tên metric | OTLP dùng đơn vị mili giây: `http_server_requests_milliseconds_count` thay cho `http_server_requests_seconds_count` ở bảng dưới |
+
+Mục tiêu "log của 3 thành phần cho một request" chờ P4 (chưa có service gọi service): hiện thấy api-gateway và service đích, cùng `traceId`.
 
 ## 3. Metric
 

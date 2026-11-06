@@ -19,7 +19,7 @@ services:
       retries: 10
   redis:
     image: redis:7-alpine
-    ports: ["127.0.0.1:6379:6379"]
+    ports: ["127.0.0.1:${REDIS_PORT:-6379}:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -35,5 +35,10 @@ services:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
       retries: 10
+  # Grafana, Loki, Tempo, Prometheus và OTel Collector trong một container; chỉ chạy với --profile observability
+  otel-lgtm:
+    image: grafana/otel-lgtm:0.39.0
+    profiles: ["observability"]
+    ports: ["127.0.0.1:3001:3000", "127.0.0.1:4317:4317", "127.0.0.1:4318:4318"]
 volumes:
   pgdata:

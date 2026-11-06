@@ -10,6 +10,7 @@ File này mô tả build Maven multi-module, cấu trúc package DDD trong mỗi
 | `proto` | `nexus-proto` | grpc-protobuf, grpc-stub |
 | `libs/nexus-common-web` | | spring-boot-starter-web, security |
 | `libs/nexus-common-messaging` | | spring-boot-starter-amqp, data-jpa |
+| `libs/nexus-common-observability` | | spring-boot-starter-opentelemetry, opentelemetry-logback-appender-1.0 |
 | `libs/nexus-common-grpc` | | `nexus-proto`, spring-grpc |
 | `libs/nexus-test-support` | | testcontainers (scope test) |
 | `services/*`, `gateways/*` | `<tên>` | các module trên tùy nhu cầu |

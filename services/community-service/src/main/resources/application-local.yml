@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/nexus?currentSchema=community
+    username: community_svc
+    password: ${DB_PASSWORD:community_svc}
+
+app:
+  jwt:
+    jwks-uri: ${JWKS_URI:http://localhost:8081/.well-known/jwks.json}
+
+logging:
+  structured:
+    format:
+      console:

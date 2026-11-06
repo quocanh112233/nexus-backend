@@ -2,6 +2,6 @@
 .git
 docs
 infra/secrets
-.env*
-*.pem
+**/.env*
+**/*.pem
 compose.override.yaml

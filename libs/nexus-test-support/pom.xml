@@ -13,7 +13,16 @@
   <artifactId>nexus-test-support</artifactId>
   <packaging>jar</packaging>
 
+  <properties>
+    <nimbus-jose-jwt.version>10.9.1</nimbus-jose-jwt.version>
+  </properties>
+
   <dependencies>
+    <dependency>
+      <groupId>com.nimbusds</groupId>
+      <artifactId>nimbus-jose-jwt</artifactId>
+      <version>${nimbus-jose-jwt.version}</version>
+    </dependency>
     <dependency>
       <groupId>org.testcontainers</groupId>
       <artifactId>testcontainers-postgresql</artifactId>
@@ -21,6 +30,11 @@
     <dependency>
       <groupId>org.springframework</groupId>
       <artifactId>spring-test</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
     </dependency>
   </dependencies>
 </project>

@@ -85,6 +85,15 @@ Lý do chia nhiều aggregate nhỏ: tránh một aggregate `Server` khổng l�
 | `POST/GET /api/v1/servers/{serverId}/invites` | Tạo, liệt kê invite | FR-026 |
 | `GET /api/v1/invites/{code}`, `POST /api/v1/invites/{code}/accept`, `DELETE /api/v1/invites/{code}` | Preview, tham gia, thu hồi | FR-027..FR-029 |
 
+**Quyết định P2 (tạm đến P3):**
+
+- Chỉ owner đổi tên/xóa server, quản lý category/kênh và liệt kê invite; mọi member tạo được invite; owner không rời được server (403).
+- Invite: mã 8 ký tự `[A-Za-z0-9]`, tạo bằng `maxUses` (0 = không giới hạn) và `expiresInSeconds` (60..2592000, mặc định 7 ngày). Preview trả 404 khi mã không tồn tại, accept trả 410 khi hết lượt, hết hạn hoặc đã thu hồi.
+- Accept chạy `addIfAbsent` rồi `tryConsume` trong một transaction (`INSERT ... ON CONFLICT DO NOTHING` + `UPDATE ... WHERE uses < max_uses`), nên join đồng thời không vượt `maxUses`.
+- `position` của category/kênh không dồn lại sau khi xóa, sắp theo `(position, id)`.
+- Con trỏ danh sách member là base64url (không padding) của `userId` cuối trang.
+- Event `Member*` dùng `aggregateId = serverId`; xóa category chỉ phát `CategoryDeleted`.
+
 gRPC server: `community.v1.PermissionService` — `CheckChannelPermissions`, `CheckServerMembership`, `ListServerIdsForUser`.
 
 ## 3. messaging-service

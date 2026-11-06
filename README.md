@@ -23,18 +23,34 @@ Thêm module mới: khai báo một dòng `<module>` trong `libs/pom.xml` hoặc
 | Mục đích | Lệnh |
 |---------|------|
 | Chuẩn bị lần đầu | `cp .env.example .env && ./infra/scripts/gen-jwt-keys.sh` |
-| Chạy Postgres/Redis/RabbitMQ + identity-service | `docker compose up -d --build --wait` |
+| Chạy Postgres/Redis/RabbitMQ + identity, community, api-gateway | `docker compose up -d --build --wait` |
 | Demo P1 (đăng ký, đăng nhập, refresh, reuse) | `./infra/scripts/demo-p1.sh` |
+| Demo P2 (server, invite, join, rời; 6 request auth mỗi lần chạy) | `./infra/scripts/demo-p2.sh` |
+| Thêm Grafana/Loki/Tempo/Prometheus, bật OTLP | `OTEL_ENDPOINT=http://otel-lgtm:4318 docker compose --profile observability up -d --build --wait` |
 | Kiểm cách ly schema | `./infra/scripts/verify-isolation.sh` |
 | Xóa sạch kể cả dữ liệu | `docker compose down -v` |
 
-Khóa JWT sinh bởi `gen-jwt-keys.sh` có quyền `644` để container non-root (uid 10001) đọc được bind mount; chỉ dùng cho local, không commit. Mọi cổng publish (Postgres, Redis, RabbitMQ, identity :8081) chỉ bind `127.0.0.1`. Cổng Postgres trên host mặc định `5432`, đổi bằng `POSTGRES_PORT` trong `.env` nếu bị chiếm.
+Hai script demo cần `curl` và `jq` trên máy chạy.
+
+Khóa JWT sinh bởi `gen-jwt-keys.sh` có quyền `644` để container non-root (uid 10001) đọc được bind mount; chỉ dùng cho local, không commit. Mọi cổng publish chỉ bind `127.0.0.1`. Cổng Postgres và Redis trên host mặc định `5432` và `6379`, đổi bằng `POSTGRES_PORT`, `REDIS_PORT` (inline hoặc trong `.env`) nếu bị chiếm.
 
 `COOKIE_SECURE=false` trong `.env` chỉ dùng cho local chạy HTTP (cookie Secure qua HTTP thì curl không gửi lại); đặt `true` khi chạy sau HTTPS. `CORS_ALLOWED_ORIGINS` phải khớp chính xác Origin của trình duyệt.
 
+### Cổng
+
+Chỉ gateway :8080 được publish trong các service ứng dụng; identity và community chỉ truy cập được qua gateway (trong network compose) và cổng actuator của mọi service không publish.
+
+| Service | Cổng app | Cổng actuator | Publish ra host |
+|---------|---------|---------------|-----------------|
+| api-gateway | 8080 | 8180 | `127.0.0.1:8080` |
+| identity-service | 8081 | 8181 | không |
+| community-service | 8082 | 8182 | không |
+
+Gateway giới hạn tần suất bằng Redis (NFR-013): `/api/v1/auth/**` khoảng 10 request/phút/IP, API có token khoảng 100 request/phút/user, xem trước invite khoảng 30 request/phút/IP; vượt mức trả 429. `infra/scripts/demo-p1.sh` tốn 4 request auth và `demo-p2.sh` tốn 6 mỗi lần chạy; hai lần chạy `demo-p2.sh` liên tiếp trong 1 phút (6 + 6 > 10) sẽ gặp 429, chờ 1 phút rồi chạy lại. Swagger UI gộp ở `http://127.0.0.1:8080/swagger-ui.html`.
+
 ## identity-service (P1)
 
-Chạy ở `http://127.0.0.1:8081`, Swagger UI tại [http://127.0.0.1:8081/swagger-ui.html](http://127.0.0.1:8081/swagger-ui.html). Cổng actuator `8181` không publish ra host. Biến `CLOUDINARY_*` để trống thì service vẫn chạy nhưng endpoint avatar chưa dùng được.
+Gọi qua gateway `http://127.0.0.1:8080` (đường dẫn `/api/v1/auth/**`, `/api/v1/users/**`). Biến `CLOUDINARY_*` để trống thì service vẫn chạy nhưng endpoint avatar chưa dùng được.
 
 | Endpoint | Mục đích |
 |----------|---------|
@@ -47,3 +63,26 @@ Chạy ở `http://127.0.0.1:8081`, Swagger UI tại [http://127.0.0.1:8081/swag
 | `GET /api/v1/users/{userId}`, `GET /api/v1/users/by-username/{username}` | Xem profile người khác (FR-010) |
 | `GET /api/v1/users?ids=` | Tra cứu hàng loạt profile theo danh sách id, tối đa 100, id trùng được gộp (FR-010) |
 | `GET /.well-known/jwks.json` | Khóa công khai để verify JWT |
+
+## community-service (P2)
+
+Gọi qua gateway `http://127.0.0.1:8080`; mọi endpoint cần `Authorization: Bearer <accessToken>` trừ xem trước invite. Tạm thời (đến P3) chỉ owner quản lý server, mọi member tạo được invite, xem [services.md](docs/02-architecture/services.md#2-community-service).
+
+| Endpoint | Mục đích |
+|----------|---------|
+| `POST /api/v1/servers`, `GET /api/v1/servers` | Tạo server (kèm role `@everyone`, category, kênh mặc định), liệt kê server của tôi (FR-020, FR-023) |
+| `GET/PATCH/DELETE /api/v1/servers/{serverId}` | Chi tiết, đổi tên, xóa server (FR-021, FR-022) |
+| `POST /api/v1/servers/{serverId}/categories`, `PATCH/DELETE .../categories/{categoryId}` | Category (FR-024) |
+| `POST /api/v1/servers/{serverId}/channels`, `PATCH/DELETE .../channels/{channelId}` | Kênh (FR-025) |
+| `POST/GET /api/v1/servers/{serverId}/invites` | Tạo invite (`maxUses`, `expiresInSeconds`), liệt kê invite (FR-026) |
+| `GET /api/v1/invites/{code}` | Xem trước invite, không cần token, 404 nếu mã không có (FR-027) |
+| `POST /api/v1/invites/{code}/accept` | Tham gia server, 410 nếu hết lượt, hết hạn hoặc đã thu hồi (FR-028) |
+| `DELETE /api/v1/invites/{code}` | Thu hồi invite (FR-029) |
+| `DELETE /api/v1/servers/{serverId}/members/@me` | Rời server (FR-030) |
+| `GET /api/v1/servers/{serverId}/members?cursor=&limit=` | Danh sách member theo cursor (FR-031) |
+
+## api-gateway và observability (P2)
+
+Gateway `:8080` định tuyến `/api/v1/auth/**`, `/api/v1/users/**` tới identity và `/api/v1/servers/**`, `/api/v1/invites/**` tới community, xác thực JWT bằng JWKS của identity, gắn `X-Request-Id`, giới hạn tần suất bằng Redis.
+
+Bật observability: `OTEL_ENDPOINT=http://otel-lgtm:4318 docker compose --profile observability up -d --build --wait`, rồi mở Grafana `http://127.0.0.1:3001` (admin/admin) → Explore → Loki, lọc `{service_name="community-service"} | requestId="<X-Request-Id do demo-p2.sh in>"`. Không đặt `OTEL_ENDPOINT` thì exporter tắt và log vẫn ra stdout dạng JSON. Chi tiết ở [observability.md](docs/02-architecture/observability.md).

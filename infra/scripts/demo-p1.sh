@@ -1,8 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 # Demo P1: đăng ký, đăng nhập, /users/me, refresh, dùng lại refresh cũ (REFRESH_TOKEN_REUSED)
+# Gọi qua api-gateway :8080; mỗi lần chạy tốn 4 request /auth/**, gateway giới hạn ~10/phút/IP nên chạy liên tiếp quá 2 lần trong 1 phút sẽ bị 429
 # Cần COOKIE_SECURE=false (mặc định trong compose): cookie Secure qua HTTP thì curl không gửi lại ở bước refresh
-BASE="${BASE_URL:-http://127.0.0.1:8081}"
+BASE="${BASE_URL:-http://127.0.0.1:8080}"
 ORIGIN="${DEMO_ORIGIN:-http://localhost:3000}"
 SUFFIX="$(date +%s)$RANDOM"
 EMAIL="demo$SUFFIX@example.com"

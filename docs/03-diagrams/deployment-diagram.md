@@ -35,10 +35,12 @@ flowchart TB
     MS -- "depends_on healthy" --> MQ
     PR -- "depends_on healthy" --> RD
     GW -- "depends_on healthy" --> ID
+    GW -- "depends_on healthy" --> CM
+    GW -- "depends_on healthy" --> RD
     FE -- "depends_on healthy" --> GW
 ```
 
-Chỉ `api-gateway :8080`, `frontend :3000`, UI RabbitMQ `:15672`, Grafana `:3001` (và Postgres/Redis cho debug) được publish ra host, chỉ bind `127.0.0.1`. Cổng gRPC không publish.
+Chỉ `api-gateway :8080`, `frontend :3000`, UI RabbitMQ `:15672`, Grafana `:3001` (và Postgres/Redis cho debug) được publish ra host, chỉ bind `127.0.0.1`. identity-service (:8081) và community-service (:8082) không publish, chỉ truy cập qua gateway. Cổng gRPC không publish.
 
 ## 2. Pipeline CI/CD
 

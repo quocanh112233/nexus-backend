@@ -1,0 +1,151 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  reactor:
+    context-propagation: auto
+  cloud:
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:2000}
+            response-timeout: ${GATEWAY_RESPONSE_TIMEOUT:30s}
+          globalcors:
+            cors-configurations:
+              "[/api/v1/auth/**]":
+                allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+                allowed-methods: GET,POST,PUT,PATCH,DELETE,OPTIONS
+                allowed-headers: Authorization,Content-Type,X-Request-Id
+                exposed-headers: X-Request-Id,Retry-After
+                allow-credentials: true
+              "[/**]":
+                allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+                allowed-methods: GET,POST,PUT,PATCH,DELETE,OPTIONS
+                allowed-headers: Authorization,Content-Type,X-Request-Id
+                exposed-headers: X-Request-Id,Retry-After
+                allow-credentials: false
+          routes:
+            # ponytail: token bucket tính theo giây nên đổi sang phút bằng requestedTokens; mỗi request tốn
+            # requestedTokens, burst = burstCapacity / requestedTokens, bền vững = replenishRate * 60 / requestedTokens.
+            # auth: 1*60/6 = 10/phút, burst 60/6 = 10 (IP). API: 5*60/3 = 100/phút, burst 300/3 = 100 (sub).
+            # Xem trước invite công khai: 1*60/2 = 30/phút, burst 60/2 = 30 (IP) để chặn dò mã invite.
+            - id: auth
+              uri: ${IDENTITY_URI:http://identity-service:8081}
+              predicates:
+                - Path=/api/v1/auth/**
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@ipKeyResolver}"
+                    redis-rate-limiter.replenishRate: 1
+                    redis-rate-limiter.requestedTokens: 6
+                    redis-rate-limiter.burstCapacity: 60
+                    deny-empty-key: true
+                    throw-on-limit: true
+            - id: users
+              uri: ${IDENTITY_URI:http://identity-service:8081}
+              predicates:
+                - Path=/api/v1/users/**
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@subKeyResolver}"
+                    redis-rate-limiter.replenishRate: 5
+                    redis-rate-limiter.requestedTokens: 3
+                    redis-rate-limiter.burstCapacity: 300
+                    deny-empty-key: true
+                    throw-on-limit: true
+            - id: invite-preview
+              uri: ${COMMUNITY_URI:http://community-service:8082}
+              predicates:
+                - Method=GET
+                - Path=/api/v1/invites/*
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@ipKeyResolver}"
+                    redis-rate-limiter.replenishRate: 1
+                    redis-rate-limiter.requestedTokens: 2
+                    redis-rate-limiter.burstCapacity: 60
+                    deny-empty-key: true
+                    throw-on-limit: true
+            - id: community
+              uri: ${COMMUNITY_URI:http://community-service:8082}
+              predicates:
+                - Path=/api/v1/servers/**,/api/v1/invites/**
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@subKeyResolver}"
+                    redis-rate-limiter.replenishRate: 5
+                    redis-rate-limiter.requestedTokens: 3
+                    redis-rate-limiter.burstCapacity: 300
+                    deny-empty-key: true
+                    throw-on-limit: true
+            - id: identity-docs
+              uri: ${IDENTITY_URI:http://identity-service:8081}
+              predicates:
+                - Path=/docs/identity/v3/api-docs
+              filters:
+                - RewritePath=/docs/identity/v3/api-docs, /v3/api-docs
+            - id: community-docs
+              uri: ${COMMUNITY_URI:http://community-service:8082}
+              predicates:
+                - Path=/docs/community/v3/api-docs
+              filters:
+                - RewritePath=/docs/community/v3/api-docs, /v3/api-docs
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:1s}
+      timeout: ${REDIS_TIMEOUT:500ms}
+
+management:
+  # Lấy mẫu 100% trace ở local; exporter OTLP chỉ bật khi đặt OTEL_EXPORTER_OTLP_ENDPOINT
+  tracing:
+    sampling:
+      probability: 1.0
+  health:
+    redis:
+      enabled: false
+  server:
+    port: 8180
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+app:
+  ratelimit:
+    enabled: ${RATELIMIT_ENABLED:true}
+  jwt:
+    jwks-uri: ${JWKS_URI}
+    jwks-connect-timeout: ${JWKS_CONNECT_TIMEOUT:2s}
+    jwks-response-timeout: ${JWKS_RESPONSE_TIMEOUT:5s}
+    jwks-refresh-cooldown: ${JWKS_REFRESH_COOLDOWN:30s}
+    issuer: nexus-identity
+    audience: nexus
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    urls:
+      - name: identity
+        url: /docs/identity/v3/api-docs
+      - name: community
+        url: /docs/community/v3/api-docs
+
+logging:
+  level:
+    com.nexus.gateway.GatewayRateLimiter: "OFF"
+  structured:
+    format:
+      console: ecs

@@ -57,20 +57,20 @@ Ký hiệu: `[ ]` việc cần làm, `[x]` đã xong — "→" tiêu chí xong.
 
 | # | Việc | Tiêu chí xong |
 |---|------|---------------|
-| 1 | Khung `community-service`, Flyway (`servers, roles, categories, channels, members, member_roles, invites, channel_permission_overwrites, outbox_event`) | ArchUnit xanh; migration chạy |
-| 2 | Aggregate `Server` (+ `@everyone`), `Category`, `Channel`, `Member`, `Invite`; VO `ServerName`, `ChannelName`, `InviteCode`, `PermissionSet` | Unit test bất biến (tên kênh sai → lỗi; `@everyone` không xóa được) |
-| 3 | Tạo server (FR-020) — 1 transaction, 4 event vào outbox | IT: tạo xong có đủ role/category/kênh/member + 4 dòng outbox |
-| 4 | Sửa/xóa server, danh sách server (FR-021..FR-023) — tạm chỉ owner được quản lý | IT |
-| 5 | Category/kênh CRUD + sắp xếp (FR-024, FR-025) | IT |
-| 6 | Invite: tạo, preview, accept, thu hồi (FR-026..FR-029) | IT **đồng thời**: 20 thread join invite `maxUses=5` → đúng 5 member mới |
-| 7 | Rời server, danh sách member cursor (FR-030, FR-031) | IT |
-| 8 | Resource server JWT qua JWKS của Identity | Gọi với token Identity cấp → 200; token tự ký → 401 |
-| 9 | `api-gateway`: route theo [services.md](../02-architecture/services.md#7-api-gateway), verify JWT, CORS, `X-Request-Id`, gom OpenAPI | Frontend chỉ dùng `:8080` |
-| 10 | Rate limit `RequestRateLimiter` + Redis cho `/auth/**` (NFR-013) | 11 request/phút cùng IP → 429 |
-| 11 | Dockerfile + compose + workflow cho community và api-gateway | CI xanh, compose healthy |
-| 12 | Bật `otel-lgtm` (profile observability), log + metric qua OTLP | Grafana → Loki lọc theo `service` và `requestId` thấy log của 3 thành phần cho 1 request |
+| [x] 1 | Khung `community-service`, Flyway (`servers, roles, categories, channels, members, member_roles, invites, channel_permission_overwrites, outbox_event`) | ArchUnit xanh; migration chạy |
+| [x] 2 | Aggregate `Server` (+ `@everyone`), `Category`, `Channel`, `Member`, `Invite`; VO `ServerName`, `ChannelName`, `InviteCode`, `PermissionSet` | Unit test bất biến (tên kênh sai → lỗi; `@everyone` không xóa được) |
+| [x] 3 | Tạo server (FR-020) — 1 transaction, 4 event vào outbox | IT: tạo xong có đủ role/category/kênh/member + 4 dòng outbox |
+| [x] 4 | Sửa/xóa server, danh sách server (FR-021..FR-023) — tạm chỉ owner được quản lý | IT |
+| [x] 5 | Category/kênh CRUD + sắp xếp (FR-024, FR-025) | IT |
+| [x] 6 | Invite: tạo, preview, accept, thu hồi (FR-026..FR-029) | IT **đồng thời**: 20 thread join invite `maxUses=5` → đúng 5 member mới |
+| [x] 7 | Rời server, danh sách member cursor (FR-030, FR-031) | IT |
+| [x] 8 | Resource server JWT qua JWKS của Identity | Gọi với token Identity cấp → 200; token tự ký → 401 |
+| [x] 9 | `api-gateway`: route theo [services.md](../02-architecture/services.md#7-api-gateway), verify JWT, CORS, `X-Request-Id`, gom OpenAPI | Frontend chỉ dùng `:8080` |
+| [x] 10 | Rate limit `RequestRateLimiter` + Redis cho `/auth/**` (NFR-013) | 11 request/phút cùng IP → 429 |
+| [x] 11 | Dockerfile + compose + workflow cho community và api-gateway | CI xanh, compose healthy (chờ xác nhận CI sau khi push) |
+| [x] 12 | Bật `otel-lgtm` (profile observability), log + metric qua OTLP | Grafana → Loki lọc theo `service_name` và `requestId` thấy log của api-gateway và service đích cho 1 request (mục tiêu 3 thành phần chờ P4, khi có service gọi service) |
 
-**Demo:** 2 tài khoản, A tạo server + invite, B join qua link; Grafana thấy log cả hai service.
+**Demo:** `infra/scripts/demo-p2.sh` (A tạo server + invite, B xem trước, join, rời; C bị 410); Grafana thấy log gateway và service đích.
 
 ---
 

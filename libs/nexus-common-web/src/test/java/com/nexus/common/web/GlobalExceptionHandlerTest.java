@@ -8,11 +8,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.classic.spi.IThrowableProxy;
+import ch.qos.logback.core.read.ListAppender;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
@@ -183,6 +189,38 @@ class GlobalExceptionHandlerTest {
         .hasRootCauseInstanceOf(AccessDeniedException.class);
   }
 
+  // Kịch bản: mã invite không được lọt vào log lỗi 500 và log truy cập
+  // Input: GET /invites/AbC123xY/boom (ném lỗi lạ) và GET /invites/AbC123xY/nope (không có route)
+  // Output: mọi dòng log của filter và advice không chứa AbC123xY, có /invites/{code}
+  @Test
+  void inviteCodeIsMaskedInLogs() throws Exception {
+    Logger web = (Logger) LoggerFactory.getLogger("com.nexus.common.web");
+    Level before = web.getLevel();
+    ListAppender<ILoggingEvent> logs = new ListAppender<>();
+    logs.start();
+    web.setLevel(Level.DEBUG);
+    web.addAppender(logs);
+    try {
+      mvc.perform(get("/invites/AbC123xY/boom"));
+      mvc.perform(get("/invites/AbC123xY/nope"));
+    } finally {
+      web.detachAppender(logs);
+      web.setLevel(before);
+    }
+    assertThat(logs.list).isNotEmpty();
+    assertThat(logs.list)
+        .allSatisfy(
+            e -> {
+              assertThat(e.getFormattedMessage()).doesNotContain("AbC123xY");
+              IThrowableProxy t = e.getThrowableProxy();
+              assertThat(t == null ? "" : t.getMessage()).doesNotContain("AbC123xY");
+            });
+    assertThat(logs.list)
+        .anyMatch(
+            e -> e.getFormattedMessage().contains("Unhandled exception on /invites/{code}/boom"))
+        .anyMatch(e -> e.getFormattedMessage().contains("path=/invites/{code}/nope"));
+  }
+
   // Kịch bản: GlobalExceptionHandler mang thứ tự thấp nhất
   // Input: đọc annotation @Order trên GlobalExceptionHandler
   // Output: giá trị bằng Ordered.LOWEST_PRECEDENCE
@@ -206,6 +244,12 @@ class GlobalExceptionHandlerTest {
     @GetMapping("/boom")
     String boom() {
       throw new IllegalStateException("secret-internal-detail");
+    }
+
+    // Ném exception lạ trên route có mã invite
+    @GetMapping("/invites/{code}/boom")
+    String inviteBoom(@PathVariable String code) {
+      throw new IllegalStateException("fail");
     }
 
     // Ném exception do advice riêng xử lý

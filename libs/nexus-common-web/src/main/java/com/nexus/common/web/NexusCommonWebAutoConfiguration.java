@@ -17,12 +17,12 @@ public class NexusCommonWebAutoConfiguration {
     return new GlobalExceptionHandler();
   }
 
-  // Đăng ký RequestIdFilter với thứ tự cao nhất
+  // Đăng ký RequestIdFilter ngay sau filter observation (HIGHEST_PRECEDENCE + 1) để log có traceId
   @Bean
   FilterRegistrationBean<RequestIdFilter> requestIdFilter() {
     FilterRegistrationBean<RequestIdFilter> registration =
         new FilterRegistrationBean<>(new RequestIdFilter());
-    registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
+    registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 2);
     return registration;
   }
 }

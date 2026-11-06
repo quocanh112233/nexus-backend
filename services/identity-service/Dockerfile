@@ -6,6 +6,9 @@ COPY .mvn .mvn
 COPY libs/ libs/
 COPY services/pom.xml services/
 COPY services/identity-service/pom.xml services/identity-service/
+COPY services/community-service/pom.xml services/community-service/
+COPY gateways/pom.xml gateways/
+COPY gateways/api-gateway/pom.xml gateways/api-gateway/
 RUN --mount=type=cache,target=/root/.m2 ./mvnw -q -pl services/identity-service -am dependency:go-offline
 COPY services/identity-service/ services/identity-service/
 RUN --mount=type=cache,target=/root/.m2 ./mvnw -q -pl services/identity-service -am package -DskipTests

@@ -61,7 +61,7 @@ services:
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
   otel-lgtm:
-    image: grafana/otel-lgtm
+    image: grafana/otel-lgtm:0.39.0
     profiles: ["observability"]
     ports: ["127.0.0.1:3001:3000", "127.0.0.1:4317:4317", "127.0.0.1:4318:4318"]
 volumes:
@@ -93,7 +93,7 @@ services:
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}
       CLOUDINARY_UPLOAD_PRESET: ${CLOUDINARY_UPLOAD_PRESET_ATTACHMENT}
       CLOUDINARY_FOLDER_ROOT: ${CLOUDINARY_FOLDER_ROOT:-nexus-dev}
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_ENDPOINT:-http://otel-lgtm:4318}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_ENDPOINT:-}
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
@@ -103,6 +103,8 @@ services:
       resources:
         limits: { memory: 512m }
 ```
+
+Trong compose hiện tại chỉ `api-gateway` publish `127.0.0.1:8080`; identity và community không publish cổng ra host, gateway phụ thuộc identity, community và redis (`service_healthy`).
 
 Thứ tự khởi động nhờ `depends_on: condition: service_healthy`: hạ tầng → identity → community → messaging → presence/notification → gateways → frontend. Nhưng service **vẫn phải tự chịu được** phụ thuộc chết sau khi đã chạy (retry kết nối, circuit breaker) — `depends_on` chỉ giúp lúc khởi động.
 
@@ -147,10 +149,14 @@ Kết quả: `messaging_svc` không đọc được `community.*` (thử `SELECT
 | `CLOUDINARY_FOLDER_ROOT` | identity, messaging | Thư mục gốc, ví dụ `nexus-dev` (local) / `nexus` (demo) để tách dữ liệu khi dùng chung 1 account |
 | `PRESENCE_SERVICE_TOKEN` | presence (gửi), community + messaging (kiểm, allowlist RPC) | Token gRPC không có user context (P-36) |
 | `COMMUNITY_GRPC_TARGET`, `MESSAGING_GRPC_TARGET`, `IDENTITY_GRPC_TARGET` | service gọi gRPC | Dạng `dns:///community-service:9092` |
+| `REDIS_HOST` | api-gateway (rate limit) | `redis` trong compose |
+| `REDIS_PORT` | compose | Cổng publish Redis trên host (mặc định 6379), không phải cấu hình của gateway |
+| `IDENTITY_URI`, `COMMUNITY_URI` | api-gateway | Địa chỉ nội bộ để định tuyến, ví dụ `http://identity-service:8081`, `http://community-service:8082` |
+| `JWKS_URI` | api-gateway, community-service | `http://identity-service:8081/.well-known/jwks.json` |
 | `CORS_ALLOWED_ORIGINS` | api-gateway, identity-service | identity-service dùng để kiểm Origin ở `/auth/refresh` (so khớp chuỗi chính xác) |
 | `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL` | frontend (build arg) | |
 | `TAG`, `FRONTEND_TAG`, `FRONTEND_DIR` | compose | |
-| `OTEL_ENDPOINT` | mọi service | Để trống khi tắt observability |
+| `OTEL_ENDPOINT` | identity, community, api-gateway (compose map vào `OTEL_EXPORTER_OTLP_ENDPOINT`) | Để trống thì exporter tắt; bật bằng `OTEL_ENDPOINT=http://otel-lgtm:4318` cùng `--profile observability` |
 
 | Môi trường | Nơi giữ secret |
 |-----------|---------------|

@@ -29,6 +29,7 @@ nexus-backend/
 ├── libs/
 │   ├── nexus-common-web/             # Problem Details, exception handler, security resource-server config
 │   ├── nexus-common-messaging/       # envelope, outbox writer/relay, inbox (OutboxEventDao, ProcessedEventDao), cấu hình RabbitMQ chung
+│   ├── nexus-common-observability/   # log/trace/metric OTLP: logback-spring.xml, tắt exporter khi chưa có endpoint
 │   ├── nexus-common-grpc/            # interceptor JWT/request-id/MDC, map exception ↔ status
 │   └── nexus-test-support/           # base class Testcontainers, fixture chung (scope test)
 ├── services/

@@ -92,7 +92,7 @@ public class GlobalExceptionHandler {
     if (ex instanceof ErrorResponse errorResponse) {
       return handleSpringError(errorResponse, ex, request);
     }
-    LOG.error("Unhandled exception on {}", request.getRequestURI(), ex);
+    LOG.error("Unhandled exception on {}", PathMask.mask(request.getRequestURI()), ex);
     return problem(
         HttpStatus.INTERNAL_SERVER_ERROR,
         "INTERNAL_ERROR",
@@ -109,9 +109,9 @@ public class GlobalExceptionHandler {
             HttpStatus.resolve(errorResponse.getStatusCode().value()),
             HttpStatus.INTERNAL_SERVER_ERROR);
     if (status.is5xxServerError()) {
-      LOG.error("Spring error on {}", request.getRequestURI(), ex);
+      LOG.error("Spring error on {}", PathMask.mask(request.getRequestURI()), ex);
     } else {
-      LOG.debug("Client error on {}", request.getRequestURI(), ex);
+      LOG.debug("Client error {} on {}", status.value(), PathMask.mask(request.getRequestURI()));
     }
     String code =
         switch (status) {

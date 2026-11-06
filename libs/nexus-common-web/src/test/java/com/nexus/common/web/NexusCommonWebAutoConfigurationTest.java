@@ -17,14 +17,14 @@ class NexusCommonWebAutoConfigurationTest {
 
   // Kịch bản: service servlet chỉ thêm dependency
   // Input: context web chứa auto-configuration
-  // Output: có bean GlobalExceptionHandler và RequestIdFilter đăng ký với order cao nhất
+  // Output: có bean GlobalExceptionHandler và RequestIdFilter đăng ký ngay sau filter observation
   @Test
   void registersHandlerAndHighestOrderFilter() {
     runner.run(
         ctx -> {
           assertThat(ctx).hasSingleBean(GlobalExceptionHandler.class);
           assertThat(ctx.getBean(FilterRegistrationBean.class).getOrder())
-              .isEqualTo(Ordered.HIGHEST_PRECEDENCE);
+              .isEqualTo(Ordered.HIGHEST_PRECEDENCE + 2);
         });
   }
 
