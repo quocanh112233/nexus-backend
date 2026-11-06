@@ -44,6 +44,7 @@ class GatewayJwksIT {
 
   private static final JsonMapper MAPPER = JsonMapper.builder().build();
   private static final TestJwt JWT = TestJwt.create();
+  private static final TestJwt ROTATED = TestJwt.create();
   private static final AtomicReference<String> MODE = new AtomicReference<>("ok");
   private static final AtomicInteger FETCHES = new AtomicInteger();
   private static final HttpServer JWKS = jwksServer();
@@ -60,6 +61,7 @@ class GatewayJwksIT {
     registry.add("COMMUNITY_URI", COMMUNITY::uri);
     registry.add("IDENTITY_URI", COMMUNITY::uri);
     registry.add("JWKS_RESPONSE_TIMEOUT", () -> "1s");
+    registry.add("JWKS_TTL", () -> "4s");
     registry.add("management.server.port", () -> "0");
     registry.add("app.ratelimit.enabled", () -> "false");
   }
@@ -121,6 +123,25 @@ class GatewayJwksIT {
     assertThat(FETCHES.get() - before).isEqualTo(1);
   }
 
+  // Kịch bản: Identity thay khóa nhưng giữ nguyên kid, gateway phải bỏ khóa cũ sau khi cache hết
+  // ttl
+  // Input: token ký khóa cũ rồi khóa mới cùng kid test-1; JWKS đổi sang khóa mới; chờ quá ttl 4
+  // giây
+  // Output: trước khi đổi khóa cũ 200; sau ttl token khóa mới 200 và token khóa cũ 401
+  @Test
+  @Order(4)
+  void sameKidKeyRotationIsPickedUpAfterTtl() throws Exception {
+    MODE.set("ok");
+    assertThat(get(JWT.token(UUID.randomUUID(), "alice")).statusCode()).isEqualTo(200);
+    MODE.set("rotated");
+    Thread.sleep(Duration.ofMillis(4500));
+
+    assertThat(get(ROTATED.token(UUID.randomUUID(), "alice")).statusCode()).isEqualTo(200);
+    HttpResponse<String> old = get(JWT.token(UUID.randomUUID(), "alice"));
+    assertThat(old.statusCode()).isEqualTo(401);
+    assertThat(code(old)).isEqualTo("UNAUTHENTICATED");
+  }
+
   // Ký token đúng iss/aud bằng khóa lạ với kid ngẫu nhiên
   private static String randomKidToken(RSAKey key) throws Exception {
     Instant now = Instant.now();
@@ -154,7 +175,7 @@ class GatewayJwksIT {
     return MAPPER.readTree(response.body()).get("code").asText();
   }
 
-  // Máy chủ JWKS giả: ok trả JWKS và đếm, hung ngủ 10 giây, error trả 500
+  // Máy chủ JWKS giả: ok trả JWKS, rotated trả khóa mới cùng kid, hung ngủ 10 giây, error trả 500
   private static HttpServer jwksServer() {
     HttpServer server;
     try {
@@ -164,6 +185,7 @@ class GatewayJwksIT {
     }
     server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
     byte[] body = JWT.jwks().getBytes(StandardCharsets.UTF_8);
+    byte[] rotated = ROTATED.jwks().getBytes(StandardCharsets.UTF_8);
     server.createContext(
         "/jwks",
         exchange -> {
@@ -179,9 +201,10 @@ class GatewayJwksIT {
             case "error" -> exchange.sendResponseHeaders(500, -1);
             default -> {
               FETCHES.incrementAndGet();
+              byte[] payload = MODE.get().equals("rotated") ? rotated : body;
               exchange.getResponseHeaders().add("Content-Type", "application/json");
-              exchange.sendResponseHeaders(200, body.length);
-              exchange.getResponseBody().write(body);
+              exchange.sendResponseHeaders(200, payload.length);
+              exchange.getResponseBody().write(payload);
             }
           }
           exchange.close();

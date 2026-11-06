@@ -131,6 +131,7 @@ app:
     jwks-connect-timeout: ${JWKS_CONNECT_TIMEOUT:2s}
     jwks-response-timeout: ${JWKS_RESPONSE_TIMEOUT:5s}
     jwks-refresh-cooldown: ${JWKS_REFRESH_COOLDOWN:30s}
+    jwks-ttl: ${JWKS_TTL:5m}
     issuer: nexus-identity
     audience: nexus
 

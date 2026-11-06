@@ -146,6 +146,22 @@ class GatewayRateLimitIT {
         .isEqualTo(200);
   }
 
+  // Kịch bản: hạn mức API là tổng theo user trên mọi route có JWT, không tách theo route
+  // Input: một user gọi luân phiên GET /api/v1/users/me và GET /api/v1/servers, 130 lần
+  // Output: 100 lần đầu 200 (không phải 200), sau đó có 429 RATE_LIMITED
+  @Test
+  void apiLimitIsSharedAcrossRoutes() throws Exception {
+    String user = token(UUID.randomUUID().toString());
+    List<Integer> statuses = new ArrayList<>();
+    for (int i = 0; i < 130; i++) {
+      String path = i % 2 == 0 ? "/api/v1/users/me" : "/api/v1/servers";
+      statuses.add(send("GET", path, user, Map.of()).statusCode());
+    }
+
+    assertThat(statuses.subList(0, 100)).containsOnly(200);
+    assertThat(statuses.subList(100, 130)).contains(429);
+  }
+
   // Kịch bản: xem trước invite công khai bị chặn theo IP kết nối để không dò được mã, bucket riêng
   // Input: 60 GET /api/v1/invites/AbCd1234 không token, X-Forwarded-For khác nhau, rồi 1 login
   // Output: 30 đầu 200; từ thứ 31 có 429 RATE_LIMITED; login vẫn 200 vì auth có bucket khác

@@ -120,6 +120,7 @@ public class SecurityConfig {
       @Value("${app.jwt.jwks-connect-timeout}") Duration connectTimeout,
       @Value("${app.jwt.jwks-response-timeout}") Duration responseTimeout,
       @Value("${app.jwt.jwks-refresh-cooldown}") Duration cooldown,
+      @Value("${app.jwt.jwks-ttl}") Duration ttl,
       @Value("${app.jwt.issuer}") String issuer,
       @Value("${app.jwt.audience}") String audience) {
     HttpClient httpClient =
@@ -132,7 +133,7 @@ public class SecurityConfig {
             .clientConnector(new ReactorClientHttpConnector(httpClient))
             .build();
     NimbusReactiveJwtDecoder decoder =
-        NimbusReactiveJwtDecoder.withJwkSource(new JwksCache(client, cooldown)::select)
+        NimbusReactiveJwtDecoder.withJwkSource(new JwksCache(client, cooldown, ttl)::select)
             .jwsAlgorithm(SignatureAlgorithm.RS256)
             .build();
     decoder.setJwtValidator(
@@ -141,26 +142,31 @@ public class SecurityConfig {
     return decoder;
   }
 
-  // Cache JWKS: kid lạ chỉ tải lại khi lần tải thành công gần nhất đã quá cooldown
+  // Cache JWKS: tải lại khi quá ttl (kể cả kid đã biết), kid lạ chỉ tải lại khi quá cooldown
   private static final class JwksCache {
 
     private final WebClient client;
     private final long cooldownNanos;
+    private final long ttlNanos;
     private final AtomicReference<JWKSet> keys = new AtomicReference<>(new JWKSet());
     private volatile long fetchedAt;
 
-    // Nhận WebClient trỏ vào JWKS và khoảng nghỉ tối thiểu giữa hai lần tải lại
-    private JwksCache(WebClient client, Duration cooldown) {
+    // Nhận WebClient trỏ vào JWKS, khoảng nghỉ giữa hai lần tải cho kid lạ và tuổi thọ tối đa của
+    // cache
+    private JwksCache(WebClient client, Duration cooldown, Duration ttl) {
       this.client = client;
       this.cooldownNanos = cooldown.toNanos();
-      this.fetchedAt = System.nanoTime() - cooldownNanos - 1;
+      this.ttlNanos = ttl.toNanos();
+      this.fetchedAt = System.nanoTime() - Math.max(cooldownNanos, ttlNanos) - 1;
     }
 
-    // Chọn khóa từ cache; kid lạ hết cooldown thì tải JWKS, có thể song song (xem journal.md)
+    // Chọn khóa từ cache; quá ttl hoặc kid lạ hết cooldown thì tải JWKS, có thể song song (xem
+    // journal.md)
     private Flux<JWK> select(SignedJWT jwt) {
       JWKSelector selector = new JWKSelector(JWKMatcher.forJWSHeader(jwt.getHeader()));
       List<JWK> cached = selector.select(keys.get());
-      if (!cached.isEmpty() || System.nanoTime() - fetchedAt < cooldownNanos) {
+      long age = System.nanoTime() - fetchedAt;
+      if (age < ttlNanos && (!cached.isEmpty() || age < cooldownNanos)) {
         return Flux.fromIterable(cached);
       }
       return client

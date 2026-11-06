@@ -3,6 +3,7 @@ package com.nexus.gateway;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,8 +13,13 @@ import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import reactor.core.publisher.Mono;
 
-// RedisRateLimiter có công tắc tắt, thêm Retry-After khi từ chối và ghi WARN thưa khi Redis lỗi
+// RedisRateLimiter có công tắc tắt, gộp bucket API theo user, thêm Retry-After và ghi WARN thưa khi
+// Redis lỗi
 public class GatewayRateLimiter extends RedisRateLimiter {
+
+  // Các route API có JWT dùng chung một bucket mỗi user; cấu hình của chúng phải giống hệt nhau
+  private static final Set<String> SHARED_API_ROUTES = Set.of("users", "community");
+  private static final String SHARED_API_BUCKET = "users";
 
   private static final Logger LOG = LoggerFactory.getLogger(RateLimitConfig.class);
 
@@ -32,13 +38,15 @@ public class GatewayRateLimiter extends RedisRateLimiter {
     this.enabled = enabled;
   }
 
-  // Tắt thì cho qua không chạm Redis; bật thì hỏi Redis rồi gắn Retry-After cho kết quả từ chối
+  // Tắt thì cho qua không chạm Redis; bật thì hỏi Redis (route API chung bucket) rồi gắn
+  // Retry-After khi từ chối
   @Override
   public Mono<Response> isAllowed(String routeId, String id) {
     if (!enabled) {
       return Mono.just(new Response(true, Map.of()));
     }
-    return super.isAllowed(routeId, id).map(this::decorate);
+    String bucket = SHARED_API_ROUTES.contains(routeId) ? SHARED_API_BUCKET : routeId;
+    return super.isAllowed(bucket, id).map(this::decorate);
   }
 
   // Remaining -1 là Redis lỗi đã cho qua, bị từ chối thì gắn Retry-After đủ token cho 1 request
