@@ -1,6 +1,7 @@
 package com.nexus.community.application.server;
 
 import com.nexus.community.application.port.DomainEventPublisher;
+import com.nexus.community.domain.server.Permission;
 import com.nexus.community.domain.server.Server;
 import com.nexus.community.domain.server.ServerId;
 import com.nexus.community.domain.server.ServerName;
@@ -11,7 +12,7 @@ import java.time.temporal.ChronoUnit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-// Use case đổi tên server, chỉ chủ server được phép
+// Use case đổi tên server, cần quyền MANAGE_SERVER
 @Service
 public class RenameServerUseCase {
 
@@ -35,7 +36,7 @@ public class RenameServerUseCase {
   // Đổi tên, lưu rồi phát ServerUpdated, trả tóm tắt mới
   @Transactional
   public ServerSummary execute(ServerId serverId, UserId userId, String name) {
-    Server server = access.requireOwner(serverId, userId);
+    Server server = access.requirePermission(serverId, userId, Permission.MANAGE_SERVER).server();
     server.rename(new ServerName(name), clock.instant().truncatedTo(ChronoUnit.MICROS));
     serverRepository.save(server);
     server.pullEvents().forEach(eventPublisher::publish);

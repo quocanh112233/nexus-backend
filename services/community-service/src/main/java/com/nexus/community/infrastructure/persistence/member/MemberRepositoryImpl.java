@@ -2,10 +2,14 @@ package com.nexus.community.infrastructure.persistence.member;
 
 import com.nexus.community.domain.member.Member;
 import com.nexus.community.domain.member.MemberRepository;
+import com.nexus.community.domain.server.RoleId;
 import com.nexus.community.domain.server.ServerId;
 import com.nexus.community.domain.shared.UserId;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Repository;
 
@@ -14,10 +18,12 @@ import org.springframework.stereotype.Repository;
 class MemberRepositoryImpl implements MemberRepository {
 
   private final MemberDao dao;
+  private final MemberRoleDao roleDao;
 
   // Nhận DAO qua constructor
-  MemberRepositoryImpl(MemberDao dao) {
+  MemberRepositoryImpl(MemberDao dao, MemberRoleDao roleDao) {
     this.dao = dao;
+    this.roleDao = roleDao;
   }
 
   // Thêm bằng một câu INSERT ON CONFLICT DO NOTHING, true khi đúng một dòng được thêm
@@ -27,10 +33,27 @@ class MemberRepositoryImpl implements MemberRepository {
         == 1;
   }
 
-  // Tìm thành viên theo khóa ghép
+  // Ghi lại role của thành viên bằng xóa rồi chèn lại
+  @Override
+  public void save(Member member) {
+    UUID serverId = member.serverId().value();
+    UUID userId = member.userId().value();
+    roleDao.deleteAllFor(serverId, userId);
+    member.roleIds().forEach(r -> roleDao.insert(serverId, userId, r.value()));
+  }
+
+  // Tìm thành viên theo khóa ghép kèm role
   @Override
   public Optional<Member> find(ServerId serverId, UserId userId) {
-    return dao.findById(new MemberKey(serverId.value(), userId.value())).map(this::toDomain);
+    return dao.findById(new MemberKey(serverId.value(), userId.value()))
+        .map(e -> withRoles(List.of(e)).get(0));
+  }
+
+  // Tìm thành viên bằng SELECT FOR UPDATE kèm role đọc sau khi có khóa
+  @Override
+  public Optional<Member> findForUpdate(ServerId serverId, UserId userId) {
+    return dao.findForUpdate(serverId.value(), userId.value())
+        .map(e -> withRoles(List.of(e)).get(0));
   }
 
   // Gỡ thành viên theo khóa ghép
@@ -54,11 +77,31 @@ class MemberRepositoryImpl implements MemberRepository {
             ? dao.findByIdServerIdOrderByIdUserIdAsc(serverId.value(), paging)
             : dao.findByIdServerIdAndIdUserIdGreaterThanOrderByIdUserIdAsc(
                 serverId.value(), afterUserId.value(), paging);
-    return rows.stream().map(this::toDomain).toList();
+    return withRoles(rows);
   }
 
-  // Dựng lại aggregate từ entity qua Member.rehydrate
-  private Member toDomain(MemberJpaEntity e) {
-    return Member.rehydrate(new ServerId(e.id.serverId()), new UserId(e.id.userId()), e.joinedAt);
+  // Dựng aggregate từ các dòng thành viên cùng server, nạp role bằng một query
+  private List<Member> withRoles(List<MemberJpaEntity> rows) {
+    if (rows.isEmpty()) {
+      return List.of();
+    }
+    UUID serverId = rows.get(0).id.serverId();
+    Map<UUID, List<RoleId>> roles =
+        roleDao
+            .findAllByServerIdAndUserIdIn(serverId, rows.stream().map(e -> e.id.userId()).toList())
+            .stream()
+            .collect(
+                Collectors.groupingBy(
+                    e -> e.id.userId(),
+                    Collectors.mapping(e -> new RoleId(e.id.roleId()), Collectors.toList())));
+    return rows.stream()
+        .map(
+            e ->
+                Member.rehydrate(
+                    new ServerId(e.id.serverId()),
+                    new UserId(e.id.userId()),
+                    e.joinedAt,
+                    roles.getOrDefault(e.id.userId(), List.of())))
+        .toList();
   }
 }

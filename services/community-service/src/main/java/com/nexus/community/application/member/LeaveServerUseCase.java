@@ -1,9 +1,11 @@
 package com.nexus.community.application.member;
 
 import com.nexus.community.application.port.DomainEventPublisher;
+import com.nexus.community.application.port.MemberLock;
 import com.nexus.community.application.server.PermissionDeniedException;
 import com.nexus.community.application.server.ServerAccess;
 import com.nexus.community.application.server.ServerNotFoundException;
+import com.nexus.community.domain.channel.ChannelOverwriteRepository;
 import com.nexus.community.domain.member.Member;
 import com.nexus.community.domain.member.MemberRepository;
 import com.nexus.community.domain.server.Server;
@@ -18,19 +20,28 @@ public class LeaveServerUseCase {
 
   private final ServerAccess access;
   private final MemberRepository memberRepository;
+  private final ChannelOverwriteRepository overwriteRepository;
+  private final MemberLock memberLock;
   private final DomainEventPublisher eventPublisher;
 
-  // Nhận cổng kiểm tra quyền, cổng lưu trữ và cổng phát sự kiện qua constructor
+  // Nhận cổng kiểm tra quyền, cổng lưu trữ, khóa và cổng phát sự kiện qua constructor
   public LeaveServerUseCase(
-      ServerAccess access, MemberRepository memberRepository, DomainEventPublisher eventPublisher) {
+      ServerAccess access,
+      MemberRepository memberRepository,
+      ChannelOverwriteRepository overwriteRepository,
+      MemberLock memberLock,
+      DomainEventPublisher eventPublisher) {
     this.access = access;
     this.memberRepository = memberRepository;
+    this.overwriteRepository = overwriteRepository;
+    this.memberLock = memberLock;
     this.eventPublisher = eventPublisher;
   }
 
-  // Kiểm tra là thành viên và không phải chủ, phát MemberLeft rồi gỡ thành viên
+  // Khóa cặp, kiểm tra thành viên không phải chủ, phát MemberLeft, gỡ thành viên, dọn overwrite
   @Transactional
   public void execute(ServerId serverId, UserId userId) {
+    memberLock.lock(serverId, userId);
     Server server = access.requireMember(serverId, userId);
     if (server.isOwner(userId)) {
       throw new PermissionDeniedException("Owner cannot leave; delete the server");
@@ -40,5 +51,6 @@ public class LeaveServerUseCase {
     member.leave();
     member.pullEvents().forEach(eventPublisher::publish);
     memberRepository.remove(serverId, userId);
+    overwriteRepository.removeByTarget(serverId, userId.value());
   }
 }

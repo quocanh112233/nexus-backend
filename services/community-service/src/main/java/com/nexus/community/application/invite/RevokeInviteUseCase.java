@@ -1,18 +1,17 @@
 package com.nexus.community.application.invite;
 
-import com.nexus.community.application.server.PermissionDeniedException;
 import com.nexus.community.application.server.ServerAccess;
 import com.nexus.community.domain.invite.Invite;
 import com.nexus.community.domain.invite.InviteCode;
 import com.nexus.community.domain.invite.InviteRepository;
-import com.nexus.community.domain.server.Server;
+import com.nexus.community.domain.server.Permission;
 import com.nexus.community.domain.shared.UserId;
 import java.time.Clock;
 import java.time.temporal.ChronoUnit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-// Use case thu hồi lời mời, chỉ người tạo hoặc chủ server được phép
+// Use case thu hồi lời mời, chỉ người tạo hoặc người có quyền MANAGE_SERVER
 @Service
 public class RevokeInviteUseCase {
 
@@ -35,9 +34,10 @@ public class RevokeInviteUseCase {
     }
     Invite invite =
         inviteRepository.findByCode(new InviteCode(code)).orElseThrow(InviteNotFoundException::new);
-    Server server = access.requireMember(invite.serverId(), userId);
-    if (!invite.inviterId().equals(userId) && !server.isOwner(userId)) {
-      throw new PermissionDeniedException();
+    if (invite.inviterId().equals(userId)) {
+      access.requireMember(invite.serverId(), userId);
+    } else {
+      access.requirePermission(invite.serverId(), userId, Permission.MANAGE_SERVER);
     }
     invite.revoke(clock.instant().truncatedTo(ChronoUnit.MICROS));
     inviteRepository.save(invite);

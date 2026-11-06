@@ -7,6 +7,7 @@ import com.nexus.community.domain.category.Category;
 import com.nexus.community.domain.category.CategoryId;
 import com.nexus.community.domain.category.CategoryName;
 import com.nexus.community.domain.category.CategoryRepository;
+import com.nexus.community.domain.server.Permission;
 import com.nexus.community.domain.server.ServerId;
 import com.nexus.community.domain.shared.DomainEvent;
 import com.nexus.community.domain.shared.Position;
@@ -18,7 +19,7 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-// Use case đổi tên và vị trí category, chỉ chủ server được phép
+// Use case đổi tên và vị trí category, cần quyền MANAGE_CHANNELS
 @Service
 public class UpdateCategoryUseCase {
 
@@ -47,7 +48,7 @@ public class UpdateCategoryUseCase {
       UserId userId,
       CategoryName name,
       Position position) {
-    access.requireOwner(serverId, userId);
+    access.requirePermission(serverId, userId, Permission.MANAGE_CHANNELS);
     Category category =
         categoryRepository
             .findById(categoryId)

@@ -5,6 +5,7 @@ import com.nexus.community.application.server.CreateServerUseCase;
 import com.nexus.community.application.server.DeleteServerUseCase;
 import com.nexus.community.application.server.GetServerQuery;
 import com.nexus.community.application.server.ListMyServersQuery;
+import com.nexus.community.application.server.MyPermissionsQuery;
 import com.nexus.community.application.server.RenameServerUseCase;
 import com.nexus.community.application.server.ServerDetail;
 import com.nexus.community.domain.server.ServerId;
@@ -25,7 +26,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-// Endpoint tạo, liệt kê, xem, đổi tên và xóa server, userId lấy từ sub của JWT
+// Endpoint tạo, liệt kê, xem, xem quyền, đổi tên và xóa server, userId lấy từ sub của JWT
 @RestController
 @RequestMapping("/api/v1/servers")
 class ServerController {
@@ -35,6 +36,7 @@ class ServerController {
   private final GetServerQuery getServer;
   private final RenameServerUseCase renameServer;
   private final DeleteServerUseCase deleteServer;
+  private final MyPermissionsQuery myPermissions;
 
   // Nhận use case và truy vấn qua constructor
   ServerController(
@@ -42,12 +44,14 @@ class ServerController {
       ListMyServersQuery listMyServers,
       GetServerQuery getServer,
       RenameServerUseCase renameServer,
-      DeleteServerUseCase deleteServer) {
+      DeleteServerUseCase deleteServer,
+      MyPermissionsQuery myPermissions) {
     this.createServer = createServer;
     this.listMyServers = listMyServers;
     this.getServer = getServer;
     this.renameServer = renameServer;
     this.deleteServer = deleteServer;
+    this.myPermissions = myPermissions;
   }
 
   // Tạo server cho người gọi, trả 201 kèm Location tới server
@@ -75,7 +79,14 @@ class ServerController {
         getServer.execute(new ServerId(serverId), UserId.of(jwt.getSubject())));
   }
 
-  // Đổi tên server, chỉ chủ server được phép
+  // Xem quyền hiệu lực của người gọi trong server và trên từng kênh
+  @GetMapping("/{serverId}/permissions/@me")
+  MyPermissionsResponse permissions(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID serverId) {
+    return MyPermissionsResponse.from(
+        myPermissions.execute(new ServerId(serverId), UserId.of(jwt.getSubject())));
+  }
+
+  // Đổi tên server, cần quyền MANAGE_SERVER
   @PatchMapping("/{serverId}")
   ServerSummaryResponse rename(
       @AuthenticationPrincipal Jwt jwt,

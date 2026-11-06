@@ -82,26 +82,26 @@ Ký hiệu: `[ ]` việc cần làm, `[x]` đã xong — "→" tiêu chí xong.
 
 | # | Việc | Tiêu chí xong |
 |---|------|---------------|
-| 1 | `PermissionCalculator` + `RoleHierarchyPolicy` (domain, không Spring) | ≥ 15 case unit test bao phủ từng bước thuật toán |
-| 2 | Role CRUD + sắp xếp (FR-032) | IT luật thứ bậc: không sửa được role ngang/cao hơn mình |
-| 3 | Gán role (FR-033), overwrite kênh (FR-034); event `MemberRolesChanged`, `ChannelPermissionsChanged`, `Role*` vào outbox | IT |
-| 4 | Thay check "chỉ owner" ở P2 bằng permission thật (`MANAGE_*`, `CREATE_INVITE`) | IT cho mỗi endpoint quản trị: thiếu quyền → 403 |
-| 5 | `GET /servers/{id}/permissions/@me`; `GET /servers/{id}` lọc kênh theo `VIEW_CHANNEL` | Kênh bị ẩn không xuất hiện |
-| 6 | Optimistic lock `version` trên `Server`, `Channel` | Hai PATCH đồng thời → một `409 VERSION_CONFLICT` |
+| [x] 1 | `PermissionCalculator` + `RoleHierarchyPolicy` (domain, không Spring); gRPC `PermissionService` dùng lại `PermissionCalculator` ở P4 | ≥ 15 case unit test bao phủ từng bước thuật toán |
+| [x] 2 | Role CRUD + sắp xếp (FR-032) | IT luật thứ bậc: không sửa được role ngang/cao hơn mình |
+| [x] 3 | Gán role (FR-033), overwrite kênh (FR-034); event `MemberRolesChanged`, `ChannelPermissionsChanged`, `Role*` vào outbox | IT |
+| [x] 4 | Thay check "chỉ owner" ở P2 bằng permission thật (`MANAGE_*`, `CREATE_INVITE`) | IT cho mỗi endpoint quản trị: thiếu quyền → 403 |
+| [x] 5 | `GET /servers/{id}/permissions/@me`; `GET /servers/{id}` lọc kênh theo `VIEW_CHANNEL` | Kênh bị ẩn không xuất hiện |
+| [x] 6 | Optimistic lock `version` trên `Server`, `Channel` | Hai PATCH đồng thời → một `409 VERSION_CONFLICT` |
 
 **Phần 2 — Kick/ban (làm sau khi phần role/permission ở trên xong, vì dùng lại `RoleHierarchyPolicy`):**
 
 | # | Việc | Tiêu chí xong |
 |---|------|---------------|
-| 7 | Flyway `server_bans`; aggregate `ServerBan`; mở rộng `RoleHierarchyPolicy.canModerate(actor, target)` | Unit test: không kick/ban owner, chính mình, người ngang/cao hơn ([activity-kick-ban-check.md](../03-diagrams/activity-kick-ban-check.md)) |
-| 8 | Kick `DELETE /servers/{id}/members/{userId}` (FR-036) + outbox `MemberKicked` | IT: kick xong join lại bằng invite được |
-| 9 | Ban `PUT /servers/{id}/bans/{userId}` (FR-037) idempotent + outbox `MemberBanned` | IT: ban xong join → `403 BANNED_FROM_SERVER`; ban 2 lần → 1 dòng, 1 event |
-| 10 | Danh sách ban + gỡ ban (FR-039) + outbox `MemberUnbanned` | IT: gỡ ban → join được |
-| 11 | Advisory lock theo cặp `(server, user)` ở join, ban, gỡ ban (WF-12 bước 4) | IT đồng thời: 50 lần chạy song song "ban" và "join" → không lần nào kết thúc với member bị ban |
+| [x] 7 | Flyway `server_bans`; aggregate `ServerBan`; mở rộng `RoleHierarchyPolicy.canModerate(actor, target)` | Unit test: không kick/ban owner, chính mình, người ngang/cao hơn ([activity-kick-ban-check.md](../03-diagrams/activity-kick-ban-check.md)) |
+| [x] 8 | Kick `DELETE /servers/{id}/members/{userId}` (FR-036) + outbox `MemberKicked` | IT: kick xong join lại bằng invite được |
+| [x] 9 | Ban `PUT /servers/{id}/bans/{userId}` (FR-037) idempotent + outbox `MemberBanned` | IT: ban xong join → `403 BANNED_FROM_SERVER`; ban 2 lần → 1 dòng, 1 event |
+| [x] 10 | Danh sách ban + gỡ ban (FR-039) + outbox `MemberUnbanned` | IT: gỡ ban → join được |
+| [x] 11 | Advisory lock theo cặp `(server, user)` ở join, ban, gỡ ban (WF-12 bước 4) | IT đồng thời: 50 lần chạy song song "ban" và "join" → không lần nào kết thúc với member bị ban |
 
 **Khái niệm học thêm (phần 2):** policy dùng lại giữa nhiều use case, race condition giữa hai thao tác khác nhau và cách tuần tự hóa theo khóa nghiệp vụ (advisory lock), xóa mềm vs xóa cứng, "audit tối thiểu" bằng chính dữ liệu nghiệp vụ.
 
-**Demo:** kịch bản kênh `announcements` ở [permission-model.md](../01-requirements/permission-model.md#7-ví-dụ) + kịch bản ban ở [sequence-kick-ban.md](../03-diagrams/sequence-kick-ban.md).
+**Demo:** `infra/scripts/demo-p3.sh` chạy kịch bản kênh `announcements` ở [permission-model.md](../01-requirements/permission-model.md#7-ví-dụ) + kịch bản ban ở [sequence-kick-ban.md](../03-diagrams/sequence-kick-ban.md).
 
 ---
 

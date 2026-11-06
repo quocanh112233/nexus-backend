@@ -46,7 +46,7 @@ class InviteController {
     this.revokeInvite = revokeInvite;
   }
 
-  // Thành viên tạo lời mời, body vắng thì dùng mặc định, trả 201
+  // Người có quyền CREATE_INVITE tạo lời mời, body vắng thì dùng mặc định, trả 201
   @PostMapping("/api/v1/servers/{serverId}/invites")
   ResponseEntity<InviteResponse> create(
       @AuthenticationPrincipal Jwt jwt,
@@ -62,7 +62,7 @@ class InviteController {
     return ResponseEntity.status(HttpStatus.CREATED).body(InviteResponse.from(view));
   }
 
-  // Chủ server liệt kê lời mời, mới tạo trước
+  // Người có quyền MANAGE_SERVER liệt kê lời mời, mới tạo trước
   @GetMapping("/api/v1/servers/{serverId}/invites")
   List<InviteResponse> list(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID serverId) {
     return listInvites.execute(new ServerId(serverId), UserId.of(jwt.getSubject())).stream()
@@ -82,7 +82,7 @@ class InviteController {
     return ServerSummaryResponse.from(acceptInvite.execute(code, UserId.of(jwt.getSubject())));
   }
 
-  // Người tạo hoặc chủ server thu hồi lời mời, trả 204
+  // Người tạo hoặc người có quyền MANAGE_SERVER thu hồi lời mời, trả 204
   @DeleteMapping("/api/v1/invites/{code}")
   ResponseEntity<Void> revoke(@AuthenticationPrincipal Jwt jwt, @PathVariable String code) {
     revokeInvite.execute(code, UserId.of(jwt.getSubject()));

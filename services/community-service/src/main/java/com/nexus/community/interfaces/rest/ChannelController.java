@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-// Endpoint tạo, sửa và xóa kênh của server, chỉ chủ server được phép
+// Endpoint tạo, sửa và xóa kênh của server, cần quyền MANAGE_CHANNELS
 @RestController
 @RequestMapping("/api/v1/servers/{serverId}/channels")
 class ChannelController {

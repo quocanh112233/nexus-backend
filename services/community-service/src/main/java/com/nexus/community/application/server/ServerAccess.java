@@ -1,13 +1,16 @@
 package com.nexus.community.application.server;
 
+import com.nexus.community.domain.member.Member;
 import com.nexus.community.domain.member.MemberRepository;
+import com.nexus.community.domain.server.Actor;
+import com.nexus.community.domain.server.Permission;
 import com.nexus.community.domain.server.Server;
 import com.nexus.community.domain.server.ServerId;
 import com.nexus.community.domain.server.ServerRepository;
 import com.nexus.community.domain.shared.UserId;
 import org.springframework.stereotype.Component;
 
-// Cổng kiểm tra quyền truy cập server cho các use case, chạy trong transaction của use case
+// Cổng kiểm tra quyền truy cập server cho các use case, tự nó không mở transaction
 @Component
 public class ServerAccess {
 
@@ -36,5 +39,22 @@ public class ServerAccess {
       throw new PermissionDeniedException();
     }
     return server;
+  }
+
+  // Trả server, member, actor của thành viên, ngoài server thì NotFound
+  public Authorized requireAuthorized(ServerId serverId, UserId userId) {
+    Server server = serverRepository.findById(serverId).orElseThrow(ServerNotFoundException::new);
+    Member member =
+        memberRepository.find(serverId, userId).orElseThrow(ServerNotFoundException::new);
+    return new Authorized(server, member, Actor.of(server, member));
+  }
+
+  // Trả server, member, actor nếu user có quyền, ngoài server thì NotFound, thiếu quyền thì Denied
+  public Authorized requirePermission(ServerId serverId, UserId userId, Permission permission) {
+    Authorized auth = requireAuthorized(serverId, userId);
+    if (!auth.actor().serverPermissions().has(permission)) {
+      throw new PermissionDeniedException();
+    }
+    return auth;
   }
 }

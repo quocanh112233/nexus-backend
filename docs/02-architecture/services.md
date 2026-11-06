@@ -85,14 +85,24 @@ Lý do chia nhiều aggregate nhỏ: tránh một aggregate `Server` khổng l�
 | `POST/GET /api/v1/servers/{serverId}/invites` | Tạo, liệt kê invite | FR-026 |
 | `GET /api/v1/invites/{code}`, `POST /api/v1/invites/{code}/accept`, `DELETE /api/v1/invites/{code}` | Preview, tham gia, thu hồi | FR-027..FR-029 |
 
-**Quyết định P2 (tạm đến P3):**
+**Quyết định P2** (dòng đầu về "chỉ owner" đã được P3 thay bằng permission thật, xem bên dưới):
 
-- Chỉ owner đổi tên/xóa server, quản lý category/kênh và liệt kê invite; mọi member tạo được invite; owner không rời được server (403).
+- Ban đầu chỉ owner đổi tên/xóa server, quản lý category/kênh và liệt kê invite, mọi member tạo được invite; owner không rời được server (403).
 - Invite: mã 8 ký tự `[A-Za-z0-9]`, tạo bằng `maxUses` (0 = không giới hạn) và `expiresInSeconds` (60..2592000, mặc định 7 ngày). Preview trả 404 khi mã không tồn tại, accept trả 410 khi hết lượt, hết hạn hoặc đã thu hồi.
 - Accept chạy `addIfAbsent` rồi `tryConsume` trong một transaction (`INSERT ... ON CONFLICT DO NOTHING` + `UPDATE ... WHERE uses < max_uses`), nên join đồng thời không vượt `maxUses`.
 - `position` của category/kênh không dồn lại sau khi xóa, sắp theo `(position, id)`.
 - Con trỏ danh sách member là base64url (không padding) của `userId` cuối trang.
 - Event `Member*` dùng `aggregateId = serverId`; xóa category chỉ phát `CategoryDeleted`.
+
+**Quyết định P3:**
+
+- Role mới mặc định ở `position` 1 và `position` luôn được đánh số dày (1..n, không khoảng trống) khi tạo, đổi chỗ, xóa; unique `(server_id, position)` là `DEFERRABLE INITIALLY DEFERRED` để đổi chỗ trong một transaction.
+- `RoleHierarchyPolicy.canPlaceAt` có hai chế độ: chèn role mới được đặt ở `position` ≤ role cao nhất của actor, di chuyển role có sẵn chỉ được đến `position` < role cao nhất của actor.
+- Overwrite của kênh chỉ nhận và chỉ áp các bit trong `PermissionSet.CHANNEL_SCOPE` (bit 2 đến 10), nên bit phạm vi server (`ADMINISTRATOR`, `KICK_MEMBERS`, `BAN_MEMBERS`...) không bị overwrite đổi; `allow` phải là quyền actor có thể cấp (`canGrant`). Đích MEMBER của overwrite cũng theo luật thứ bậc: actor chỉ đặt được cho member thấp hơn mình.
+- `GET /servers/{id}` ẩn kênh người gọi không có `VIEW_CHANNEL` nhưng chưa ẩn category rỗng; `permissions/@me` chỉ liệt kê kênh nhìn thấy được.
+- Event `RoleCreated` và `RoleUpdated` mang `permissions` dạng chuỗi số thập phân, `ChannelPermissionsChanged` phát ở mỗi PUT/DELETE overwrite kể cả khi giá trị không đổi.
+- Gán role (`PUT .../members/{userId}/roles`) đọc hàng member bằng `SELECT ... FOR UPDATE` rồi mới tính hiệu đối xứng tập role cũ và mới, để hai lần gán đồng thời không ghi đè lẫn nhau (lost update trên `member_roles`).
+- Ban, gỡ ban, kick và accept invite cùng lấy `pg_advisory_xact_lock` theo cặp `(server, user)` trước khi đọc/ghi `members` và `server_bans`, nên ban và join đồng thời không bao giờ để lại member bị ban (`BanJoinConcurrencyIT`). Ban xong thì xóa member và overwrite MEMBER của user. Ban người chưa là member được phép; ban lại im lặng trả `204`; `reason` rỗng lưu `null`.
 
 gRPC server: `community.v1.PermissionService` — `CheckChannelPermissions`, `CheckServerMembership`, `ListServerIdsForUser`.
 

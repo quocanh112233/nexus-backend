@@ -26,11 +26,12 @@ Thêm module mới: khai báo một dòng `<module>` trong `libs/pom.xml` hoặc
 | Chạy Postgres/Redis/RabbitMQ + identity, community, api-gateway | `docker compose up -d --build --wait` |
 | Demo P1 (đăng ký, đăng nhập, refresh, reuse) | `./infra/scripts/demo-p1.sh` |
 | Demo P2 (server, invite, join, rời; 6 request auth mỗi lần chạy) | `./infra/scripts/demo-p2.sh` |
+| Demo P3 (role Mod, overwrite kênh, ban/gỡ ban; 6 request auth mỗi lần chạy) | `./infra/scripts/demo-p3.sh` |
 | Thêm Grafana/Loki/Tempo/Prometheus, bật OTLP | `OTEL_ENDPOINT=http://otel-lgtm:4318 docker compose --profile observability up -d --build --wait` |
 | Kiểm cách ly schema | `./infra/scripts/verify-isolation.sh` |
 | Xóa sạch kể cả dữ liệu | `docker compose down -v` |
 
-Hai script demo cần `curl` và `jq` trên máy chạy.
+Các script demo cần `curl` và `jq` trên máy chạy.
 
 Khóa JWT sinh bởi `gen-jwt-keys.sh` có quyền `644` để container non-root (uid 10001) đọc được bind mount; chỉ dùng cho local, không commit. Mọi cổng publish chỉ bind `127.0.0.1`. Cổng Postgres và Redis trên host mặc định `5432` và `6379`, đổi bằng `POSTGRES_PORT`, `REDIS_PORT` (inline hoặc trong `.env`) nếu bị chiếm.
 
@@ -46,7 +47,7 @@ Chỉ gateway :8080 được publish trong các service ứng dụng; identity v
 | identity-service | 8081 | 8181 | không |
 | community-service | 8082 | 8182 | không |
 
-Gateway giới hạn tần suất bằng Redis (NFR-013): `/api/v1/auth/**` khoảng 10 request/phút/IP, API có token khoảng 100 request/phút/user, xem trước invite khoảng 30 request/phút/IP; vượt mức trả 429. `infra/scripts/demo-p1.sh` tốn 4 request auth và `demo-p2.sh` tốn 6 mỗi lần chạy; hai lần chạy `demo-p2.sh` liên tiếp trong 1 phút (6 + 6 > 10) sẽ gặp 429, chờ 1 phút rồi chạy lại. Swagger UI gộp ở `http://127.0.0.1:8080/swagger-ui.html`.
+Gateway giới hạn tần suất bằng Redis (NFR-013): `/api/v1/auth/**` khoảng 10 request/phút/IP, API có token khoảng 100 request/phút/user, xem trước invite khoảng 30 request/phút/IP; vượt mức trả 429. `infra/scripts/demo-p1.sh` tốn 4 request auth và `demo-p2.sh` và `demo-p3.sh` tốn 6 mỗi lần chạy; hai lần chạy liên tiếp trong 1 phút (6 + 6 > 10, kể cả xen kẽ `demo-p2.sh` và `demo-p3.sh`) sẽ gặp 429, chờ 1 phút rồi chạy lại. Swagger UI gộp ở `http://127.0.0.1:8080/swagger-ui.html`.
 
 ## identity-service (P1)
 
@@ -66,7 +67,7 @@ Gọi qua gateway `http://127.0.0.1:8080` (đường dẫn `/api/v1/auth/**`, `/
 
 ## community-service (P2)
 
-Gọi qua gateway `http://127.0.0.1:8080`; mọi endpoint cần `Authorization: Bearer <accessToken>` trừ xem trước invite. Tạm thời (đến P3) chỉ owner quản lý server, mọi member tạo được invite, xem [services.md](docs/02-architecture/services.md#2-community-service).
+Gọi qua gateway `http://127.0.0.1:8080`; mọi endpoint cần `Authorization: Bearer <accessToken>` trừ xem trước invite. Từ P3 quyền được kiểm theo permission thật (owner luôn đủ quyền), xem [services.md](docs/02-architecture/services.md#2-community-service) và [permission-model.md](docs/01-requirements/permission-model.md).
 
 | Endpoint | Mục đích |
 |----------|---------|
@@ -80,6 +81,20 @@ Gọi qua gateway `http://127.0.0.1:8080`; mọi endpoint cần `Authorization: 
 | `DELETE /api/v1/invites/{code}` | Thu hồi invite (FR-029) |
 | `DELETE /api/v1/servers/{serverId}/members/@me` | Rời server (FR-030) |
 | `GET /api/v1/servers/{serverId}/members?cursor=&limit=` | Danh sách member theo cursor (FR-031) |
+
+### community-service (P3): role, permission, kick, ban
+
+| Endpoint | Mục đích |
+|----------|---------|
+| `GET/POST /api/v1/servers/{serverId}/roles`, `PATCH/DELETE .../roles/{roleId}` | Liệt kê, tạo, sửa (tên, màu, quyền, vị trí), xóa role theo luật thứ bậc (FR-032) |
+| `PUT /api/v1/servers/{serverId}/members/{userId}/roles` | Thay tập role của member `{roleIds}` (FR-033) |
+| `PUT/DELETE /api/v1/servers/{serverId}/channels/{channelId}/permissions/{targetType}/{targetId}` | Đặt, gỡ overwrite `{allow, deny}` của role hoặc member (`targetType` = `role` hoặc `member`) (FR-034) |
+| `GET /api/v1/servers/{serverId}/permissions/@me` | Quyền hiệu lực của tôi: bitset server và từng kênh nhìn thấy được (FR-034) |
+| `DELETE /api/v1/servers/{serverId}/members/{userId}` | Kick member, vào lại được bằng invite (FR-036) |
+| `PUT /api/v1/servers/{serverId}/bans/{userId}` | Ban `{reason?}` (tối đa 512 ký tự), idempotent, cả người chưa là member (FR-037) |
+| `DELETE /api/v1/servers/{serverId}/bans/{userId}`, `GET .../bans?cursor=&limit=` | Gỡ ban, liệt kê ban (FR-039) |
+
+Bị ban thì `POST /api/v1/invites/{code}/accept` trả `403 BANNED_FROM_SERVER`. Demo: `./infra/scripts/demo-p3.sh` chạy kịch bản `announcements` của [permission-model.md](docs/01-requirements/permission-model.md#7-ví-dụ) rồi ban/gỡ ban qua gateway (17 bước, exit 1 nếu một bước sai mã HTTP).
 
 ## api-gateway và observability (P2)
 

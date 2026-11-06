@@ -7,7 +7,7 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
-// Ánh xạ bảng roles, bất biến ở P2 nên không có version
+// Ánh xạ bảng roles, khóa lạc quan do hàng server giữ nên không có version
 @Entity
 @Table(name = "roles")
 class RoleJpaEntity {

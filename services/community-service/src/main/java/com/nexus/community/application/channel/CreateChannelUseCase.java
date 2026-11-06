@@ -10,6 +10,7 @@ import com.nexus.community.domain.channel.ChannelChanges;
 import com.nexus.community.domain.channel.ChannelCreated;
 import com.nexus.community.domain.channel.ChannelName;
 import com.nexus.community.domain.channel.ChannelRepository;
+import com.nexus.community.domain.server.Permission;
 import com.nexus.community.domain.server.ServerId;
 import com.nexus.community.domain.shared.Position;
 import com.nexus.community.domain.shared.UserId;
@@ -20,7 +21,7 @@ import java.util.Objects;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-// Use case tạo kênh trong server, chỉ chủ server được phép
+// Use case tạo kênh trong server, cần quyền MANAGE_CHANNELS
 @Service
 public class CreateChannelUseCase {
 
@@ -53,7 +54,7 @@ public class CreateChannelUseCase {
       String topic,
       CategoryId categoryId,
       Integer position) {
-    access.requireOwner(serverId, userId);
+    access.requirePermission(serverId, userId, Permission.MANAGE_CHANNELS);
     if (categoryId != null) {
       CategoryChecks.requireInServer(categoryRepository, serverId, categoryId);
     }

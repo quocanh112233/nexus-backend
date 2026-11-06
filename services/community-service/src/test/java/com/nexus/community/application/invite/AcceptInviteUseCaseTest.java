@@ -3,13 +3,17 @@ package com.nexus.community.application.invite;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.nexus.community.application.port.DomainEventPublisher;
+import com.nexus.community.application.port.MemberLock;
 import com.nexus.community.application.server.ServerSummary;
+import com.nexus.community.domain.ban.ServerBan;
+import com.nexus.community.domain.ban.ServerBanRepository;
 import com.nexus.community.domain.invite.Invite;
 import com.nexus.community.domain.invite.InviteCode;
 import com.nexus.community.domain.invite.InviteRepository;
@@ -29,8 +33,9 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 
-// Kiểm tra AcceptInviteUseCase: thêm member trước, tryConsume sau, phát MemberJoined khi thành công
+// Kiểm tra AcceptInviteUseCase: khóa, chặn ban, thêm member, tryConsume, phát MemberJoined
 class AcceptInviteUseCaseTest {
 
   private static final Instant NOW = Instant.parse("2026-11-05T01:02:03.123456Z");
@@ -39,10 +44,12 @@ class AcceptInviteUseCaseTest {
   private final ServerRepository servers = mock(ServerRepository.class);
   private final MemberRepository members = mock(MemberRepository.class);
   private final List<DomainEvent> published = new ArrayList<>();
+  private final ServerBanRepository bans = mock(ServerBanRepository.class);
+  private final MemberLock memberLock = mock(MemberLock.class);
   private final DomainEventPublisher publisher = published::add;
   private final AcceptInviteUseCase useCase =
       new AcceptInviteUseCase(
-          invites, servers, members, publisher, Clock.fixed(NOW, ZoneOffset.UTC));
+          invites, servers, members, bans, memberLock, publisher, Clock.fixed(NOW, ZoneOffset.UTC));
   private final Server server = Server.create(new ServerName("S"), UserId.newId(), NOW);
   private final InviteCode code = new InviteCode("Abcd1234");
   private final UserId user = UserId.newId();
@@ -95,6 +102,26 @@ class AcceptInviteUseCaseTest {
 
     assertThat(summary.id()).isEqualTo(server.id().value());
     assertThat(published).containsExactly(new MemberJoined(server.id(), user, NOW));
+  }
+
+  // Kịch bản: user bị ban bị chặn sau khi lấy khóa và trước mọi thay đổi
+  // Input: bans.find trả có ban cho user
+  // Output: BannedFromServerException; lock gọi trước find; addIfAbsent, tryConsume, event không có
+  @Test
+  void bannedUserBlockedAfterLockBeforeAnyWrite() {
+    when(bans.find(server.id(), user))
+        .thenReturn(
+            Optional.of(ServerBan.create(server.id(), user, server.ownerId(), null, false, NOW)));
+
+    assertThatThrownBy(() -> useCase.execute(code.value(), user))
+        .isInstanceOf(BannedFromServerException.class);
+
+    InOrder order = inOrder(memberLock, bans);
+    order.verify(memberLock).lock(server.id(), user);
+    order.verify(bans).find(server.id(), user);
+    verify(members, never()).addIfAbsent(any());
+    verify(invites, never()).tryConsume(any(), any());
+    assertThat(published).isEmpty();
   }
 
   // Kịch bản: mã sai định dạng hoặc không có bị từ chối trước khi đụng tới member

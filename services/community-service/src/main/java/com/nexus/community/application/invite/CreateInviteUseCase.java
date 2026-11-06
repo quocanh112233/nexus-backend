@@ -5,6 +5,7 @@ import com.nexus.community.application.server.ServerAccess;
 import com.nexus.community.domain.invite.Invite;
 import com.nexus.community.domain.invite.InviteCode;
 import com.nexus.community.domain.invite.InviteRepository;
+import com.nexus.community.domain.server.Permission;
 import com.nexus.community.domain.server.ServerId;
 import com.nexus.community.domain.shared.UserId;
 import java.time.Clock;
@@ -13,7 +14,7 @@ import java.time.temporal.ChronoUnit;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
-// Use case tạo lời mời, mọi thành viên server được phép
+// Use case tạo lời mời, cần quyền CREATE_INVITE
 @Service
 public class CreateInviteUseCase {
 
@@ -38,7 +39,7 @@ public class CreateInviteUseCase {
 
   // Tạo lời mời, thử tối đa 3 mã nếu trùng; không bọc transaction để INSERT trùng còn thử lại được
   public InviteView execute(ServerId serverId, UserId userId, int maxUses, long expiresInSeconds) {
-    access.requireMember(serverId, userId);
+    access.requirePermission(serverId, userId, Permission.CREATE_INVITE);
     Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
     for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       InviteCode code = codeGenerator.generate();

@@ -7,7 +7,7 @@ import java.util.Optional;
 // Cổng lưu trữ aggregate Server cùng role @everyone
 public interface ServerRepository {
 
-  // Lưu server, lần đầu ghi cả role, các lần sau chỉ cập nhật hàng server
+  // Lưu server, lần đầu ghi cả role, các lần sau cập nhật hàng server rồi đồng bộ role
   void save(Server server);
 
   // Tìm server kèm role theo id

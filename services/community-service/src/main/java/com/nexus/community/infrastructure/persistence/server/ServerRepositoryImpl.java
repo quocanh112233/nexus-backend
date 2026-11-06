@@ -4,9 +4,11 @@ import com.nexus.community.domain.server.Server;
 import com.nexus.community.domain.server.ServerId;
 import com.nexus.community.domain.server.ServerRepository;
 import com.nexus.community.domain.shared.UserId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Repository;
@@ -26,7 +28,7 @@ class ServerRepositoryImpl implements ServerRepository {
     this.mapper = mapper;
   }
 
-  // Lưu và flush ngay; server mới (chưa có hàng) persist cùng role, server cũ merge theo version
+  // Lưu và flush ngay; server mới persist cùng role, server cũ merge theo version rồi đồng bộ role
   @Override
   public void save(Server server) {
     ServerJpaEntity entity = mapper.toJpa(server);
@@ -37,7 +39,28 @@ class ServerRepositoryImpl implements ServerRepository {
     dao.saveAndFlush(entity);
     if (isNew) {
       roleDao.saveAll(mapper.toRoleJpa(server));
+    } else {
+      syncRoles(server);
     }
+  }
+
+  // Xóa role không còn trong aggregate, cập nhật role cũ và thêm role mới
+  private void syncRoles(Server server) {
+    Map<UUID, RoleJpaEntity> existing =
+        roleDao.findAllByServerIdIn(List.of(server.id().value())).stream()
+            .collect(Collectors.toMap(r -> r.id, r -> r));
+    List<RoleJpaEntity> wanted = mapper.toRoleJpa(server);
+    Set<UUID> wantedIds = wanted.stream().map(r -> r.id).collect(Collectors.toSet());
+    roleDao.deleteAll(existing.values().stream().filter(r -> !wantedIds.contains(r.id)).toList());
+    List<RoleJpaEntity> toSave = new ArrayList<>();
+    for (RoleJpaEntity role : wanted) {
+      RoleJpaEntity old = existing.get(role.id);
+      if (old != null) {
+        mapper.copyRole(role, old);
+      }
+      toSave.add(old != null ? old : role);
+    }
+    roleDao.saveAll(toSave);
   }
 
   // Tìm server theo id kèm role

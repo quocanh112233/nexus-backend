@@ -12,6 +12,9 @@ import com.nexus.community.domain.channel.ChannelName;
 import com.nexus.community.domain.channel.ChannelRepository;
 import com.nexus.community.domain.member.Member;
 import com.nexus.community.domain.member.MemberRepository;
+import com.nexus.community.domain.server.PermissionSet;
+import com.nexus.community.domain.server.Role;
+import com.nexus.community.domain.server.RoleChanges;
 import com.nexus.community.domain.server.Server;
 import com.nexus.community.domain.server.ServerName;
 import com.nexus.community.domain.server.ServerRepository;
@@ -117,6 +120,66 @@ class ServerRepositoryImplIT extends CommunityIntegrationTest {
         .extracting(Server::id)
         .containsExactly(older.id(), newer.id());
     assertThat(repository.findAllByMember(me).get(0).roles()).hasSize(1);
+  }
+
+  // Kịch bản: thêm 3 role, đổi chỗ hai role trong một lần save, xóa một role rồi tải lại
+  // Input: lưu server, createRole a b c, save; đổi vị trí c về 1 và save; removeRole b và save
+  // Output: mỗi lần tải lại khớp bản gốc, không vi phạm unique, version tăng theo từng lần save
+  @Test
+  void syncsRolesWithSwapAndDelete() {
+    Server server = newServer();
+    repository.save(server);
+    Server loaded = repository.findById(server.id()).orElseThrow();
+    Role c = loaded.createRole("c", 1, PermissionSet.EVERYONE_DEFAULT, null, now());
+    Role b = loaded.createRole("b", 2, PermissionSet.ALL, null, now());
+    loaded.createRole("a", 3, new PermissionSet(0), null, now());
+    repository.save(loaded);
+    Server afterCreate = repository.findById(server.id()).orElseThrow();
+    assertThat(afterCreate)
+        .usingRecursiveComparison()
+        .ignoringFields("events", "version")
+        .isEqualTo(loaded);
+    assertThat(afterCreate.version()).isEqualTo(1L);
+    assertThat(afterCreate.roles())
+        .extracting(Role::name)
+        .containsExactly("@everyone", "a", "b", "c");
+
+    afterCreate.updateRole(c.id(), new RoleChanges(null, null, null, 1), now());
+    repository.save(afterCreate);
+    Server afterSwap = repository.findById(server.id()).orElseThrow();
+    assertThat(afterSwap.roles())
+        .extracting(Role::name)
+        .containsExactly("@everyone", "c", "a", "b");
+    assertThat(afterSwap.roles()).extracting(Role::position).containsExactly(0, 1, 2, 3);
+    assertThat(afterSwap.version()).isEqualTo(2L);
+
+    afterSwap.removeRole(b.id(), now());
+    repository.save(afterSwap);
+    Server afterDelete = repository.findById(server.id()).orElseThrow();
+    assertThat(afterDelete.roles()).extracting(Role::name).containsExactly("@everyone", "c", "a");
+    assertThat(afterDelete.roles()).extracting(Role::position).containsExactly(0, 1, 2);
+    assertThat(afterDelete.version()).isEqualTo(3L);
+  }
+
+  // Kịch bản: hai bản cùng version cùng sửa role, bản lưu sau đã cũ
+  // Input: server có role "r", tải hai bản, mỗi bản đổi tên role khác nhau, lưu bản 1 rồi bản 2
+  // Output: bản 2 ném ObjectOptimisticLockingFailureException, role giữ tên của bản 1
+  @Test
+  void staleRoleEditThrowsOptimisticLock() {
+    Server server = newServer();
+    Role r = server.createRole("r", 0, new PermissionSet(0), null, now());
+    repository.save(server);
+    Server first = repository.findById(server.id()).orElseThrow();
+    Server second = repository.findById(server.id()).orElseThrow();
+    first.updateRole(r.id(), new RoleChanges("one", null, null, null), now());
+    second.updateRole(r.id(), new RoleChanges("two", null, null, null), now());
+
+    repository.save(first);
+
+    assertThatThrownBy(() -> repository.save(second))
+        .isInstanceOf(ObjectOptimisticLockingFailureException.class);
+    assertThat(repository.findById(server.id()).orElseThrow().findRole(r.id()).orElseThrow().name())
+        .isEqualTo("one");
   }
 
   // Dựng server mới chưa lưu với chủ ngẫu nhiên

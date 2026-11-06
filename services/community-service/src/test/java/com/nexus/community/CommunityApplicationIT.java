@@ -21,9 +21,9 @@ class CommunityApplicationIT extends CommunityIntegrationTest {
   @Autowired private JdbcTemplate jdbc;
   @LocalManagementPort private int managementPort;
 
-  // Kịch bản: context khởi động, Flyway migrate V1 vào schema community và Hibernate validate đạt
+  // Kịch bản: context khởi động, Flyway migrate V1-V3 vào schema community, Hibernate validate
   // Input: Postgres trống, spring.flyway.schemas=community, ddl-auto=validate
-  // Output: đủ 9 bảng nghiệp vụ trong schema community và không có server_bans
+  // Output: đủ 10 bảng nghiệp vụ trong schema community gồm cả server_bans
   @Test
   void contextLoadsAndFlywayCreatesTables() {
     var tables =
@@ -40,9 +40,9 @@ class CommunityApplicationIT extends CommunityIntegrationTest {
             "channel_permission_overwrites",
             "members",
             "member_roles",
+            "server_bans",
             "invites",
-            "outbox_event")
-        .doesNotContain("server_bans");
+            "outbox_event");
   }
 
   // Kịch bản: cổng quản trị phục vụ health không cần đăng nhập

@@ -7,6 +7,8 @@ import static org.mockito.Mockito.verify;
 
 import com.nexus.common.messaging.OutboxMessage;
 import com.nexus.common.messaging.OutboxWriter;
+import com.nexus.community.domain.ban.MemberBanned;
+import com.nexus.community.domain.ban.MemberUnbanned;
 import com.nexus.community.domain.category.CategoryCreated;
 import com.nexus.community.domain.category.CategoryDeleted;
 import com.nexus.community.domain.category.CategoryId;
@@ -16,9 +18,17 @@ import com.nexus.community.domain.channel.ChannelCreated;
 import com.nexus.community.domain.channel.ChannelDeleted;
 import com.nexus.community.domain.channel.ChannelId;
 import com.nexus.community.domain.channel.ChannelName;
+import com.nexus.community.domain.channel.ChannelPermissionsChanged;
 import com.nexus.community.domain.channel.ChannelUpdated;
 import com.nexus.community.domain.member.MemberJoined;
 import com.nexus.community.domain.member.MemberLeft;
+import com.nexus.community.domain.member.MemberRolesChanged;
+import com.nexus.community.domain.server.Permission;
+import com.nexus.community.domain.server.PermissionSet;
+import com.nexus.community.domain.server.RoleCreated;
+import com.nexus.community.domain.server.RoleDeleted;
+import com.nexus.community.domain.server.RoleId;
+import com.nexus.community.domain.server.RoleUpdated;
 import com.nexus.community.domain.server.ServerCreated;
 import com.nexus.community.domain.server.ServerDeleted;
 import com.nexus.community.domain.server.ServerId;
@@ -28,6 +38,7 @@ import com.nexus.community.domain.shared.DomainEvent;
 import com.nexus.community.domain.shared.Position;
 import com.nexus.community.domain.shared.UserId;
 import java.time.Instant;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -237,6 +248,144 @@ class OutboxDomainEventPublisherTest {
         .containsOnlyKeys("serverId", "userId")
         .containsEntry("serverId", serverId.value().toString())
         .containsEntry("userId", user.value().toString());
+  }
+
+  // Kịch bản: RoleCreated và RoleUpdated ghi vào outbox, permissions là chuỗi thập phân
+  // Input: role "Mod" quyền SEND_MESSAGES vị trí 2 được tạo rồi đổi tên thành "Mod2" vị trí 1
+  // Output: aggregate Role, id role, role.created và role.updated cùng 5 khóa, permissions chuỗi
+  @Test
+  void mapsRoleCreatedAndRoleUpdated() {
+    RoleId id = RoleId.newId();
+    PermissionSet perms = new PermissionSet(0).with(Permission.SEND_MESSAGES);
+
+    OutboxMessage created = publish(new RoleCreated(serverId, id, "Mod", perms, 2));
+    OutboxMessage updated = publish(new RoleUpdated(serverId, id, "Mod2", perms, 1));
+
+    assertThat(created.aggregateType()).isEqualTo("Role");
+    assertThat(created.aggregateId()).isEqualTo(id.value());
+    assertThat(created.eventType()).isEqualTo("RoleCreated");
+    assertThat(created.routingKey()).isEqualTo("role.created");
+    assertThat(created.payload())
+        .containsOnlyKeys("serverId", "roleId", "name", "permissions", "position")
+        .containsEntry("serverId", serverId.value().toString())
+        .containsEntry("roleId", id.value().toString())
+        .containsEntry("name", "Mod")
+        .containsEntry("permissions", String.valueOf(perms.bits()))
+        .containsEntry("position", 2);
+    assertThat(updated.aggregateType()).isEqualTo("Role");
+    assertThat(updated.aggregateId()).isEqualTo(id.value());
+    assertThat(updated.eventType()).isEqualTo("RoleUpdated");
+    assertThat(updated.routingKey()).isEqualTo("role.updated");
+    assertThat(updated.payload())
+        .containsOnlyKeys("serverId", "roleId", "name", "permissions", "position")
+        .containsEntry("name", "Mod2")
+        .containsEntry("permissions", String.valueOf(perms.bits()))
+        .containsEntry("position", 1);
+  }
+
+  // Kịch bản: RoleDeleted ghi vào outbox với aggregate Role
+  // Input: role bị xóa
+  // Output: aggregate Role, id role, role.deleted, payload chỉ serverId và roleId
+  @Test
+  void mapsRoleDeleted() {
+    RoleId id = RoleId.newId();
+
+    OutboxMessage m = publish(new RoleDeleted(serverId, id));
+
+    assertThat(m.aggregateType()).isEqualTo("Role");
+    assertThat(m.aggregateId()).isEqualTo(id.value());
+    assertThat(m.routingKey()).isEqualTo("role.deleted");
+    assertThat(m.payload())
+        .containsOnlyKeys("serverId", "roleId")
+        .containsEntry("serverId", serverId.value().toString())
+        .containsEntry("roleId", id.value().toString());
+  }
+
+  // Kịch bản: MemberRolesChanged ghi vào outbox với aggregateId là serverId
+  // Input: user đổi sang hai role
+  // Output: aggregate Member, id server, member.roles-changed, payload roleIds là danh sách chuỗi
+  @Test
+  void mapsMemberRolesChanged() {
+    UserId user = UserId.newId();
+    RoleId a = RoleId.newId();
+    RoleId b = RoleId.newId();
+
+    OutboxMessage m = publish(new MemberRolesChanged(serverId, user, List.of(a, b)));
+
+    assertThat(m.aggregateType()).isEqualTo("Member");
+    assertThat(m.aggregateId()).isEqualTo(serverId.value());
+    assertThat(m.eventType()).isEqualTo("MemberRolesChanged");
+    assertThat(m.routingKey()).isEqualTo("member.roles-changed");
+    assertThat(m.payload())
+        .containsOnlyKeys("serverId", "userId", "roleIds")
+        .containsEntry("serverId", serverId.value().toString())
+        .containsEntry("userId", user.value().toString())
+        .containsEntry("roleIds", List.of(a.value().toString(), b.value().toString()));
+  }
+
+  // Kịch bản: MemberBanned ghi vào outbox với aggregate Ban và aggregateId là serverId
+  // Input: ban có lý do rồi ban không lý do, wasMember true và false
+  // Output: aggregate Ban, member.banned; payload có reason chuỗi hoặc null và wasMember đúng
+  @Test
+  void mapsMemberBanned() {
+    UserId user = UserId.newId();
+    UserId admin = UserId.newId();
+
+    OutboxMessage m = publish(new MemberBanned(serverId, user, admin, "spam", true));
+    OutboxMessage noReason = publish(new MemberBanned(serverId, user, admin, null, false));
+
+    assertThat(m.aggregateType()).isEqualTo("Ban");
+    assertThat(m.aggregateId()).isEqualTo(serverId.value());
+    assertThat(m.eventType()).isEqualTo("MemberBanned");
+    assertThat(m.routingKey()).isEqualTo("member.banned");
+    assertThat(m.payload())
+        .containsOnlyKeys("serverId", "userId", "bannedBy", "reason", "wasMember")
+        .containsEntry("serverId", serverId.value().toString())
+        .containsEntry("userId", user.value().toString())
+        .containsEntry("bannedBy", admin.value().toString())
+        .containsEntry("reason", "spam")
+        .containsEntry("wasMember", true);
+    assertThat(noReason.payload()).containsEntry("reason", null).containsEntry("wasMember", false);
+  }
+
+  // Kịch bản: MemberUnbanned ghi vào outbox với aggregate Ban
+  // Input: admin gỡ ban một user
+  // Output: aggregate Ban, id server, member.unbanned, payload serverId, userId, unbannedBy
+  @Test
+  void mapsMemberUnbanned() {
+    UserId user = UserId.newId();
+    UserId admin = UserId.newId();
+
+    OutboxMessage m = publish(new MemberUnbanned(serverId, user, admin));
+
+    assertThat(m.aggregateType()).isEqualTo("Ban");
+    assertThat(m.aggregateId()).isEqualTo(serverId.value());
+    assertThat(m.eventType()).isEqualTo("MemberUnbanned");
+    assertThat(m.routingKey()).isEqualTo("member.unbanned");
+    assertThat(m.payload())
+        .containsOnlyKeys("serverId", "userId", "unbannedBy")
+        .containsEntry("serverId", serverId.value().toString())
+        .containsEntry("userId", user.value().toString())
+        .containsEntry("unbannedBy", admin.value().toString());
+  }
+
+  // Kịch bản: ChannelPermissionsChanged ghi vào outbox theo catalog
+  // Input: overwrite của một kênh vừa đổi
+  // Output: aggregate Channel, channel.permissions-changed, payload chỉ serverId, channelId
+  @Test
+  void mapsChannelPermissionsChanged() {
+    ChannelId id = ChannelId.newId();
+
+    OutboxMessage m = publish(new ChannelPermissionsChanged(serverId, id));
+
+    assertThat(m.aggregateType()).isEqualTo("Channel");
+    assertThat(m.aggregateId()).isEqualTo(id.value());
+    assertThat(m.eventType()).isEqualTo("ChannelPermissionsChanged");
+    assertThat(m.routingKey()).isEqualTo("channel.permissions-changed");
+    assertThat(m.payload())
+        .containsOnlyKeys("serverId", "channelId")
+        .containsEntry("serverId", serverId.value().toString())
+        .containsEntry("channelId", id.value().toString());
   }
 
   // Kịch bản: event chưa được map bị từ chối rõ ràng

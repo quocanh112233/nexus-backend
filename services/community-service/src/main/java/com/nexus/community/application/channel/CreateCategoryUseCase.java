@@ -6,6 +6,7 @@ import com.nexus.community.application.server.ServerAccess;
 import com.nexus.community.domain.category.Category;
 import com.nexus.community.domain.category.CategoryName;
 import com.nexus.community.domain.category.CategoryRepository;
+import com.nexus.community.domain.server.Permission;
 import com.nexus.community.domain.server.ServerId;
 import com.nexus.community.domain.shared.Position;
 import com.nexus.community.domain.shared.UserId;
@@ -14,7 +15,7 @@ import java.time.temporal.ChronoUnit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-// Use case tạo category, chỉ chủ server được phép
+// Use case tạo category, cần quyền MANAGE_CHANNELS
 @Service
 public class CreateCategoryUseCase {
 
@@ -39,7 +40,7 @@ public class CreateCategoryUseCase {
   @Transactional
   public CategoryView execute(
       ServerId serverId, UserId userId, CategoryName name, Integer position) {
-    access.requireOwner(serverId, userId);
+    access.requirePermission(serverId, userId, Permission.MANAGE_CHANNELS);
     Position at =
         new Position(
             position != null ? position : categoryRepository.findAllByServer(serverId).size());

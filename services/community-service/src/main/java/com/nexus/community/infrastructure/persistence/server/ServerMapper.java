@@ -38,7 +38,7 @@ final class ServerMapper {
     return e;
   }
 
-  // Dựng các entity role của server, created_at lấy theo thời điểm tạo server
+  // Dựng các entity role của server, created_at lấy theo updatedAt của server
   List<RoleJpaEntity> toRoleJpa(Server s) {
     return s.roles().stream()
         .map(
@@ -51,10 +51,18 @@ final class ServerMapper {
               e.permissions = r.permissions().bits();
               e.position = r.position();
               e.isDefault = r.isDefault();
-              e.createdAt = s.createdAt();
+              e.createdAt = s.updatedAt();
               return e;
             })
         .toList();
+  }
+
+  // Chép các trường đổi được từ entity role mới sang entity role đã có (giữ created_at)
+  void copyRole(RoleJpaEntity from, RoleJpaEntity to) {
+    to.name = from.name;
+    to.color = from.color;
+    to.permissions = from.permissions;
+    to.position = from.position;
   }
 
   // Chuyển một entity role thành record Role

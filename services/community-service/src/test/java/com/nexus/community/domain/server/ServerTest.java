@@ -42,14 +42,14 @@ class ServerTest {
   }
 
   // Kịch bản: không gỡ được role mặc định
-  // Input: removeRole với id của role @everyone
+  // Input: removeRole với id của role @everyone và NOW
   // Output: ném DomainValidationException, role vẫn còn
   @Test
   void everyoneRoleCannotBeRemoved() {
     Server server = newServer();
     RoleId everyone = server.roles().get(0).id();
 
-    assertThatThrownBy(() -> server.removeRole(everyone))
+    assertThatThrownBy(() -> server.removeRole(everyone, NOW))
         .isInstanceOf(DomainValidationException.class);
     assertThat(server.roles()).hasSize(1);
   }

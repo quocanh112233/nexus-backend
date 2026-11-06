@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.nexus.community.CommunityIntegrationTest;
 import com.nexus.community.domain.member.Member;
 import com.nexus.community.domain.member.MemberRepository;
+import com.nexus.community.domain.server.PermissionSet;
+import com.nexus.community.domain.server.Role;
 import com.nexus.community.domain.server.Server;
 import com.nexus.community.domain.server.ServerName;
 import com.nexus.community.domain.server.ServerRepository;
@@ -98,6 +100,88 @@ class MemberRepositoryImplIT extends CommunityIntegrationTest {
 
     assertThat(repository.count(a.id())).isEqualTo(3L);
     assertThat(repository.count(b.id())).isEqualTo(1L);
+  }
+
+  // Kịch bản: lưu role cho thành viên rồi đọc lại bằng find và page
+  // Input: server có role a b, hai thành viên, save thành viên 1 với [a, b], thành viên 2 với [b]
+  // Output: find và page trả roleIds đúng từng người; save lại với [a] thì chỉ còn a
+  @Test
+  void saveThenFindAndPageReturnRoleIds() {
+    Server server = savedServer();
+    Role a = server.createRole("a", 0, new PermissionSet(0), null, now());
+    Role b = server.createRole("b", 0, new PermissionSet(0), null, now());
+    servers.save(server);
+    Member m1 = Member.join(server.id(), UserId.newId(), now());
+    Member m2 = Member.join(server.id(), UserId.newId(), now());
+    add(m1);
+    add(m2);
+    m1.replaceRoles(List.of(a.id(), b.id()));
+    m2.replaceRoles(List.of(b.id()));
+    save(m1);
+    save(m2);
+
+    assertThat(repository.find(server.id(), m1.userId()).orElseThrow().roleIds())
+        .containsExactlyInAnyOrder(a.id(), b.id());
+    assertThat(repository.page(server.id(), null, 10))
+        .extracting(m -> m.roleIds().size())
+        .containsExactlyInAnyOrder(2, 1);
+
+    m1.replaceRoles(List.of(a.id()));
+    save(m1);
+
+    assertThat(repository.find(server.id(), m1.userId()).orElseThrow().roleIds())
+        .containsExactly(a.id());
+    assertThat(repository.find(server.id(), m2.userId()).orElseThrow().roleIds())
+        .containsExactly(b.id());
+  }
+
+  // Kịch bản: xóa role qua ServerRepository làm role biến mất khỏi roleIds của thành viên
+  // Input: thành viên có [a, b], removeRole a rồi save server
+  // Output: find trả roleIds chỉ còn b
+  @Test
+  void deletingRoleRemovesItFromMembers() {
+    Server server = savedServer();
+    Role a = server.createRole("a", 0, new PermissionSet(0), null, now());
+    Role b = server.createRole("b", 0, new PermissionSet(0), null, now());
+    servers.save(server);
+    Member member = Member.join(server.id(), UserId.newId(), now());
+    add(member);
+    member.replaceRoles(List.of(a.id(), b.id()));
+    save(member);
+
+    Server loaded = servers.findById(server.id()).orElseThrow();
+    loaded.removeRole(a.id(), now());
+    servers.save(loaded);
+
+    assertThat(repository.find(server.id(), member.userId()).orElseThrow().roleIds())
+        .containsExactly(b.id());
+  }
+
+  // Kịch bản: findForUpdate trong transaction trả thành viên kèm role, người lạ trả rỗng
+  // Input: thành viên có [a], findForUpdate thành viên đó và một user chưa vào server
+  // Output: thành viên trả roleIds [a] đúng như find; user lạ trả rỗng
+  @Test
+  void findForUpdateReturnsMemberWithRoles() {
+    Server server = savedServer();
+    Role a = server.createRole("a", 0, new PermissionSet(0), null, now());
+    servers.save(server);
+    Member member = Member.join(server.id(), UserId.newId(), now());
+    add(member);
+    member.replaceRoles(List.of(a.id()));
+    save(member);
+
+    Member locked =
+        tx.execute(s -> repository.findForUpdate(server.id(), member.userId()).orElseThrow());
+    boolean strangerFound =
+        tx.execute(s -> repository.findForUpdate(server.id(), UserId.newId()).isPresent());
+
+    assertThat(locked.roleIds()).containsExactly(a.id());
+    assertThat(strangerFound).isFalse();
+  }
+
+  // Gọi save trong một transaction vì xóa-chèn member_roles chạy trong transaction của nơi gọi
+  private void save(Member member) {
+    tx.executeWithoutResult(s -> repository.save(member));
   }
 
   // Gọi addIfAbsent trong một transaction vì lệnh INSERT cần transaction của nơi gọi

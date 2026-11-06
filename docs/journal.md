@@ -1,4 +1,4 @@
-# Nhật ký học (P0-P2)
+# Nhật ký học (P0-P3)
 
 - Cách ly schema bằng user DB riêng: mỗi service chỉ thấy schema của mình, `permission denied` ở mức DB mạnh hơn quy ước trong code.
 - DDD 4 lớp + DAO: `domain` thuần Java, JPA entity và mapper nằm ở `infrastructure/persistence`; ArchUnit giữ ranh giới này.
@@ -13,6 +13,11 @@
 - JWKS cache của gateway chưa gộp request: mỗi lần hết cooldown có thể có nhiều tải JWKS song song, và khi identity chết thì mỗi request mang kid lạ lại thử tải (bị chặn bởi connect/response timeout). Muốn gộp thì dùng `Mono.cache` hoặc khóa single-flight.
 - Mã invite là thông tin tham gia: log không được chứa nó, `PathMask` đổi `/invites/{mã}` thành `/invites/{code}` ở mọi chỗ ghi path (cả gateway lẫn servlet).
 - Spring Cloud 2025.1.4 chạy trên Boot 4.1.2: release train này dựng cho Boot 4.0, verifier chấp nhận 4.1.x và mọi IT của gateway xanh; xem lại khi 2026.0 GA.
+- Domain service thuần: `PermissionCalculator` và `RoleHierarchyPolicy` không phụ thuộc Spring, nên test dạng bảng (mỗi dòng một kịch bản vào/ra) bao phủ từng bước thuật toán mà không cần DB; gRPC `PermissionService` ở P4 chỉ gọi lại calculator.
+- Gán role dùng hiệu đối xứng giữa tập role cũ và mới để biết role nào thêm, role nào bớt rồi chỉ kiểm thứ bậc trên các role đó; đọc rồi ghi `member_roles` mà không khóa thì hai lần gán đồng thời ghi đè nhau (lost update), nên khóa hàng member bằng `SELECT ... FOR UPDATE` trước khi tính.
+- Đổi chỗ `position` của role vi phạm unique `(server_id, position)` ở giữa chừng, nên constraint phải `DEFERRABLE INITIALLY DEFERRED` để chỉ kiểm khi commit.
+- Race ban × join: `SELECT` kiểm ban rồi `INSERT` member không đủ vì ban có thể chen vào giữa hai câu lệnh; `pg_advisory_xact_lock` theo cặp `(server, user)` ở cả join, ban, gỡ ban và kick tuần tự hóa chúng. Bỏ lời gọi khóa ở `AcceptInviteUseCase` thì `BanJoinConcurrencyIT` fail ngay vòng đầu (member bị ban); IT dùng nhiều accept song song mỗi vòng để cửa sổ race đủ rộng.
+- Ban là audit tối thiểu bằng chính dữ liệu nghiệp vụ: dòng `server_bans` đã lưu `bannedBy`, `reason`, `createdAt` nên không cần bảng audit riêng.
 
 ## Bằng chứng observability (Task 13)
 

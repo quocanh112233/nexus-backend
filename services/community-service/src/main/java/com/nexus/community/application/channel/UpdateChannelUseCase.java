@@ -8,6 +8,7 @@ import com.nexus.community.domain.channel.Channel;
 import com.nexus.community.domain.channel.ChannelChanges;
 import com.nexus.community.domain.channel.ChannelId;
 import com.nexus.community.domain.channel.ChannelRepository;
+import com.nexus.community.domain.server.Permission;
 import com.nexus.community.domain.server.ServerId;
 import com.nexus.community.domain.shared.UserId;
 import java.time.Clock;
@@ -15,7 +16,7 @@ import java.time.temporal.ChronoUnit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-// Use case sửa kênh một phần, chỉ chủ server được phép
+// Use case sửa kênh một phần, cần quyền MANAGE_CHANNELS
 @Service
 public class UpdateChannelUseCase {
 
@@ -43,7 +44,7 @@ public class UpdateChannelUseCase {
   @Transactional
   public ChannelView execute(
       ServerId serverId, ChannelId channelId, UserId userId, ChannelChanges changes) {
-    access.requireOwner(serverId, userId);
+    access.requirePermission(serverId, userId, Permission.MANAGE_CHANNELS);
     Channel channel =
         channelRepository
             .findById(channelId)

@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
-// Kiểm tra RenameServerUseCase đổi tên, lưu và phát ServerUpdated, chỉ cho chủ server
+// Kiểm tra RenameServerUseCase đổi tên, lưu và phát ServerUpdated, cần MANAGE_SERVER
 class RenameServerUseCaseTest {
 
   private final ServerRepository servers = mock(ServerRepository.class);

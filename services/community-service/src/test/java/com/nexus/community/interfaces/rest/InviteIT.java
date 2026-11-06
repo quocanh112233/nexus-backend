@@ -4,6 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
 import com.nexus.community.CommunityIntegrationTest;
+import com.nexus.community.domain.ban.ServerBan;
+import com.nexus.community.domain.ban.ServerBanRepository;
+import com.nexus.community.domain.server.ServerId;
+import com.nexus.community.domain.shared.UserId;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -17,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -29,6 +34,8 @@ class InviteIT extends CommunityIntegrationTest {
   private static final String PAST = "now() - interval '1 minute'";
 
   @Autowired private JdbcTemplate jdbc;
+  @Autowired private ServerBanRepository bans;
+  @Autowired private TransactionTemplate tx;
   @LocalServerPort private int port;
 
   // Kịch bản: thành viên tạo lời mời không body và body rỗng thì dùng mặc định
@@ -259,6 +266,44 @@ class InviteIT extends CommunityIntegrationTest {
     assertThat(joinedOutbox(server, user)).isZero();
   }
 
+  // Kịch bản: user đang bị ban không tham gia được dù lời mời còn dùng được
+  // Input: ban user qua repository rồi user đó accept; sau đó một user khác accept
+  // Output: bị ban 403 BANNED_FROM_SERVER, không member, uses 0, không member.joined; user khác 200
+  @Test
+  void bannedUserAccept403WithoutConsumingUse() throws Exception {
+    UUID owner = UUID.randomUUID();
+    UUID banned = UUID.randomUUID();
+    String server = createServer(owner);
+    String code = createInvite(server, owner, "{\"maxUses\":5}");
+    ban(server, banned);
+
+    HttpResponse<String> response = accept(code, banned);
+
+    assertThat(response.statusCode()).isEqualTo(403);
+    assertThat(code(response)).isEqualTo("BANNED_FROM_SERVER");
+    assertThat(isMember(server, banned)).isFalse();
+    assertThat(uses(code)).isZero();
+    assertThat(joinedOutbox(server, banned)).isZero();
+    assertThat(accept(code, UUID.randomUUID()).statusCode()).isEqualTo(200);
+    assertThat(uses(code)).isEqualTo(1);
+  }
+
+  // Kịch bản: ban chỉ có hiệu lực trong đúng server bị ban
+  // Input: user bị ban ở server A accept lời mời của server B
+  // Output: 200 và user thành member của server B
+  @Test
+  void banInOtherServerDoesNotBlock() throws Exception {
+    UUID owner = UUID.randomUUID();
+    UUID user = UUID.randomUUID();
+    String serverA = createServer(owner);
+    String serverB = createServer(owner);
+    String codeB = createInvite(serverB, owner, "{}");
+    ban(serverA, user);
+
+    assertThat(accept(codeB, user).statusCode()).isEqualTo(200);
+    assertThat(isMember(serverB, user)).isTrue();
+  }
+
   // Kịch bản: người đã là thành viên accept lời mời hết hạn vẫn nhận 200
   // Input: owner accept lời mời hết hạn của chính server
   // Output: 200 tóm tắt server, uses vẫn 0
@@ -405,6 +450,19 @@ class InviteIT extends CommunityIntegrationTest {
   // Đường dẫn danh sách lời mời của server
   private static String invitesOf(String server) {
     return "/api/v1/servers/" + server + "/invites";
+  }
+
+  // Ban user khỏi server qua repository trong một transaction
+  private void ban(String server, UUID user) {
+    ServerBan ban =
+        ServerBan.create(
+            new ServerId(UUID.fromString(server)),
+            new UserId(user),
+            UserId.newId(),
+            null,
+            false,
+            Instant.now().truncatedTo(ChronoUnit.MICROS));
+    tx.executeWithoutResult(s -> bans.addIfAbsent(ban));
   }
 
   // Gọi accept lời mời với Bearer của user

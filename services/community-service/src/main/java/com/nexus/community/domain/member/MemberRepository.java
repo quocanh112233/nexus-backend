@@ -11,8 +11,14 @@ public interface MemberRepository {
   // Thêm thành viên nếu chưa có, true khi thực sự thêm hàng mới
   boolean addIfAbsent(Member member);
 
+  // Ghi lại tập role của thành viên bằng xóa-chèn trong transaction của nơi gọi
+  void save(Member member);
+
   // Tìm thành viên theo server và user
   Optional<Member> find(ServerId serverId, UserId userId);
+
+  // Tìm thành viên và khóa hàng của họ đến hết transaction, để các lần ghi role tuần tự hóa
+  Optional<Member> findForUpdate(ServerId serverId, UserId userId);
 
   // Gỡ thành viên khỏi server
   void remove(ServerId serverId, UserId userId);

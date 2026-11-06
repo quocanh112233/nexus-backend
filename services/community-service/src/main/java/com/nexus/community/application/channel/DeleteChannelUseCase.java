@@ -5,12 +5,13 @@ import com.nexus.community.application.server.ServerAccess;
 import com.nexus.community.domain.channel.Channel;
 import com.nexus.community.domain.channel.ChannelId;
 import com.nexus.community.domain.channel.ChannelRepository;
+import com.nexus.community.domain.server.Permission;
 import com.nexus.community.domain.server.ServerId;
 import com.nexus.community.domain.shared.UserId;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-// Use case xóa kênh, chỉ chủ server được phép
+// Use case xóa kênh, cần quyền MANAGE_CHANNELS
 @Service
 public class DeleteChannelUseCase {
 
@@ -31,7 +32,7 @@ public class DeleteChannelUseCase {
   // Phát ChannelDeleted rồi xóa kênh
   @Transactional
   public void execute(ServerId serverId, ChannelId channelId, UserId userId) {
-    access.requireOwner(serverId, userId);
+    access.requirePermission(serverId, userId, Permission.MANAGE_CHANNELS);
     Channel channel =
         channelRepository
             .findById(channelId)
