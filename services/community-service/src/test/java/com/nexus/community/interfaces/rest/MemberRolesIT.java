@@ -86,6 +86,24 @@ class MemberRolesIT extends CommunityIntegrationTest {
     assertThat(texts(memberOf(h, h.member).get("roleIds"))).containsExactly(h.low);
   }
 
+  // Kịch bản: Lead dưới hạng nhưng không được cấp role mang quyền mình không có
+  // Input: owner tạo role Super thấp hơn Lead nhưng có ADMINISTRATOR; Lead PUT Super cho member và
+  // mình
+  // Output: cả hai 403 và không ai nhận Super; Lead gỡ Super khỏi member (owner đã gán) vẫn 200
+  @Test
+  void leadCannotGrantRoleCarryingPermissionsTheyLack() throws Exception {
+    Hierarchy h = hierarchy();
+    String superRole = createRole(h.server, h.owner, "{\"name\":\"Super\",\"permissions\":1}");
+
+    assertThat(put(h, h.lead, h.member, ids(superRole)).statusCode()).isEqualTo(403);
+    assertThat(put(h, h.lead, h.lead, ids(h.leadRole, superRole)).statusCode()).isEqualTo(403);
+    assertThat(texts(memberOf(h, h.member).get("roleIds"))).isEmpty();
+    assertThat(texts(memberOf(h, h.lead).get("roleIds"))).containsExactly(h.leadRole);
+
+    put(h, h.owner, h.member, ids(superRole));
+    assertThat(put(h, h.lead, h.member, ids()).statusCode()).isEqualTo(200);
+  }
+
   // Kịch bản: tự gán role cao hơn mình cũng bị chặn, tự gán role thấp thì được
   // Input: Lead PUT cho chính mình [Lead, High], rồi [Lead, Low]
   // Output: lần đầu 403 và roleIds không đổi; lần hai 200 với roleIds gồm Lead và Low

@@ -390,6 +390,62 @@ class OverwriteIT extends CommunityIntegrationTest {
         .isEqualTo(403);
   }
 
+  // Kịch bản: quyền MANAGE_CHANNELS cấp ở server không vượt qua deny hay ẩn kênh ở cấp kênh
+  // Input: Chan có MANAGE_CHANNELS; owner deny MANAGE_CHANNELS cho Chan ở announcements, deny VIEW
+  // ở hidden
+  // Output: PATCH và DELETE announcements 403, hidden 404, kênh còn đủ; PATCH general 200
+  @Test
+  void channelOverwritesLimitEditAndDeleteChannel() throws Exception {
+    Fx f = fx();
+    String chan = role(f, "{\"name\":\"Chan\",\"permissions\":8,\"position\":1}");
+    assign(f.server, f.plain, chan);
+    String hidden =
+        MAPPER
+            .readTree(raw("POST", f.server + "/channels", f.owner, "{\"name\":\"hidden\"}").body())
+            .get("id")
+            .asText();
+    putRole(f, f.owner, f.announcements, chan, 0, 8);
+    putRole(f, f.owner, hidden, chan, 0, VIEW_CHANNEL);
+    String patch = "{\"name\":\"renamed\"}";
+
+    assertThat(raw("PATCH", f.server + "/channels/" + f.announcements, f.plain, patch).statusCode())
+        .isEqualTo(403);
+    assertThat(raw("DELETE", f.server + "/channels/" + f.announcements, f.plain, null).statusCode())
+        .isEqualTo(403);
+    assertThat(raw("PATCH", f.server + "/channels/" + hidden, f.plain, patch).statusCode())
+        .isEqualTo(404);
+    assertThat(raw("DELETE", f.server + "/channels/" + hidden, f.plain, null).statusCode())
+        .isEqualTo(404);
+
+    Integer left =
+        jdbc.queryForObject(
+            "select count(*) from community.channels where id in (?::uuid, ?::uuid)",
+            Integer.class,
+            f.announcements,
+            hidden);
+    assertThat(left).isEqualTo(2);
+    assertThat(raw("PATCH", f.server + "/channels/" + f.general, f.plain, patch).statusCode())
+        .isEqualTo(200);
+  }
+
+  // Kịch bản: allow MANAGE_CHANNELS riêng ở một kênh đủ để sửa và xóa kênh đó, không lan sang kênh
+  // khác
+  // Input: member thường được owner allow MANAGE_CHANNELS ở announcements; PATCH và DELETE hai kênh
+  // Output: PATCH và DELETE announcements 200 và 204; PATCH general vẫn 403
+  @Test
+  void channelLevelAllowManagesOnlyThatChannel() throws Exception {
+    Fx f = fx();
+    put(f, f.owner, f.announcements, "member", f.plain.toString(), 8, 0);
+    String patch = "{\"name\":\"renamed\"}";
+
+    assertThat(raw("PATCH", f.server + "/channels/" + f.general, f.plain, patch).statusCode())
+        .isEqualTo(403);
+    assertThat(raw("PATCH", f.server + "/channels/" + f.announcements, f.plain, patch).statusCode())
+        .isEqualTo(200);
+    assertThat(raw("DELETE", f.server + "/channels/" + f.announcements, f.plain, null).statusCode())
+        .isEqualTo(204);
+  }
+
   // Kịch bản: xóa role dọn mọi overwrite của role đó
   // Input: overwrite cho Mod ở hai kênh và cho @everyone, rồi DELETE role Mod
   // Output: overwrite của Mod biến mất ở cả hai kênh, overwrite @everyone còn nguyên

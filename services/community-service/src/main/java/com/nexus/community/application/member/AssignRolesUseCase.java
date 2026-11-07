@@ -23,7 +23,8 @@ import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-// Use case thay tập role của thành viên, cần MANAGE_ROLES và mọi role thêm hoặc bớt nằm trong tầm
+// Use case thay tập role của thành viên, cần MANAGE_ROLES, role đổi nằm dưới actor và role thêm
+// không vượt quyền actor
 @Service
 public class AssignRolesUseCase {
 
@@ -65,7 +66,9 @@ public class AssignRolesUseCase {
               .findRole(id)
               .orElseThrow(
                   () -> new OptimisticLockingFailureException("role changed concurrently"));
-      if (!RoleHierarchyPolicy.canManageRole(auth.actor(), role)) {
+      boolean added = wanted.contains(id);
+      if (!RoleHierarchyPolicy.canManageRole(auth.actor(), role)
+          || (added && !RoleHierarchyPolicy.canGrant(auth.actor(), role.permissions()))) {
         throw new PermissionDeniedException();
       }
     }

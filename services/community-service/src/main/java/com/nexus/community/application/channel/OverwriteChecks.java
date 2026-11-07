@@ -33,11 +33,17 @@ final class OverwriteChecks {
 
   // Quyền hiệu lực của actor trên kênh, không thấy kênh thì NotFound, thiếu MANAGE_ROLES thì Denied
   static PermissionSet requireChannelManager(Authorized auth, List<ChannelOverwrite> overwrites) {
+    return requireOnChannel(auth, overwrites, Permission.MANAGE_ROLES);
+  }
+
+  // Quyền hiệu lực của actor trên kênh, không thấy kênh thì NotFound, thiếu quyền đó thì Denied
+  static PermissionSet requireOnChannel(
+      Authorized auth, List<ChannelOverwrite> overwrites, Permission permission) {
     PermissionSet here = PermissionCalculator.channel(auth.server(), auth.member(), overwrites);
     if (!here.has(Permission.VIEW_CHANNEL)) {
       throw new ChannelNotFoundException();
     }
-    if (!here.has(Permission.MANAGE_ROLES)) {
+    if (!here.has(permission)) {
       throw new PermissionDeniedException();
     }
     return here;
