@@ -18,6 +18,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
@@ -215,6 +216,19 @@ class AttachmentIT extends MessagingIntegrationTest {
     for (String rest : List.of(other, "a//b", ".", "a/./b", "a\\b", "a\u0001b", " x", "x ")) {
       assertBadAttachment(own + rest, "image");
     }
+    verifyNoInteractions(verifier);
+  }
+
+  // Kịch bản: danh sách attachments chứa phần tử null
+  // Input: content hợp lệ và attachments là [null]
+  // Output: 400 VALIDATION_FAILED, verifier không bị gọi, không lưu tin
+  @Test
+  void nullAttachmentElementIs400() throws Exception {
+    HttpResponse<String> response =
+        post(channel, Map.of("content", "x", "attachments", Arrays.asList((Object) null)));
+
+    assertCode(response, 400, "VALIDATION_FAILED");
+    assertThat(countMessages()).isZero();
     verifyNoInteractions(verifier);
   }
 

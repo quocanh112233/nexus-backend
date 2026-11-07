@@ -2,6 +2,7 @@ package com.nexus.messaging.interfaces.rest;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.util.List;
@@ -12,7 +13,7 @@ record SendMessageRequest(
     @Size(max = 8000) String content,
     String nonce,
     UUID replyToId,
-    List<@Valid AttachmentRequest> attachments) {
+    List<@NotNull @Valid AttachmentRequest> attachments) {
 
   // Tệp đã upload lên Cloudinary; metadata do server lấy lại từ Cloudinary
   record AttachmentRequest(
