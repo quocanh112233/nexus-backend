@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package nexus.identity.v1;
+
+option java_multiple_files = true;
+option java_package = "com.nexus.proto.identity.v1";
+
+// Tra cứu thông tin công khai của user cho service khác
+service UserService {
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  rpc BatchGetUsers(BatchGetUsersRequest) returns (BatchGetUsersResponse);
+}
+
+// Yêu cầu lấy một user theo id
+message GetUserRequest {
+  string user_id = 1;
+}
+
+// User tìm được
+message GetUserResponse {
+  User user = 1;
+}
+
+// Yêu cầu lấy nhiều user, tối đa 100 phần tử
+message BatchGetUsersRequest {
+  repeated string user_ids = 1;
+}
+
+// Các user tìm được
+message BatchGetUsersResponse {
+  repeated User users = 1;
+}
+
+// Thông tin công khai của user
+message User {
+  string user_id = 1;
+  string username = 2;
+  string display_name = 3;
+  string avatar_url = 4;
+}

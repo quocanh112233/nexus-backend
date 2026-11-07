@@ -16,5 +16,6 @@
   <modules>
     <module>identity-service</module>
     <module>community-service</module>
+    <module>messaging-service</module>
   </modules>
 </project>

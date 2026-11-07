@@ -18,7 +18,7 @@ import reactor.core.publisher.Mono;
 public class GatewayRateLimiter extends RedisRateLimiter {
 
   // Các route API có JWT dùng chung một bucket mỗi user; cấu hình của chúng phải giống hệt nhau
-  private static final Set<String> SHARED_API_ROUTES = Set.of("users", "community");
+  private static final Set<String> SHARED_API_ROUTES = Set.of("users", "community", "messaging");
   private static final String SHARED_API_BUCKET = "users";
 
   private static final Logger LOG = LoggerFactory.getLogger(RateLimitConfig.class);

@@ -4,6 +4,9 @@ server:
 spring:
   application:
     name: identity-service
+  grpc:
+    server:
+      port: ${GRPC_PORT:9091}
   datasource:
     url: ${DB_URL}
     username: ${DB_USER}

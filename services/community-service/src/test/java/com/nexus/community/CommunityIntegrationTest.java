@@ -12,10 +12,11 @@ public abstract class CommunityIntegrationTest extends PostgresIntegrationTest {
   protected static final TestJwt JWT = TestJwt.create();
   private static final TestJwt.JwksServer JWKS = JWT.serveJwks();
 
-  // Trỏ app.jwt.jwks-uri tới máy chủ JWKS giả của TestJwt
+  // Trỏ app.jwt.jwks-uri tới máy chủ JWKS giả của TestJwt và để gRPC chọn cổng ngẫu nhiên
   @DynamicPropertySource
   static void jwt(DynamicPropertyRegistry registry) {
     registry.add("app.jwt.jwks-uri", JWKS::uri);
+    registry.add("spring.grpc.server.port", () -> 0);
   }
 
   // Trả header Authorization Bearer hợp lệ cho user bất kỳ

@@ -23,10 +23,11 @@ Thêm module mới: khai báo một dòng `<module>` trong `libs/pom.xml` hoặc
 | Mục đích | Lệnh |
 |---------|------|
 | Chuẩn bị lần đầu | `cp .env.example .env && ./infra/scripts/gen-jwt-keys.sh` |
-| Chạy Postgres/Redis/RabbitMQ + identity, community, api-gateway | `docker compose up -d --build --wait` |
+| Chạy Postgres/Redis/RabbitMQ + identity, community, messaging, api-gateway | `docker compose up -d --build --wait` |
 | Demo P1 (đăng ký, đăng nhập, refresh, reuse) | `./infra/scripts/demo-p1.sh` |
 | Demo P2 (server, invite, join, rời; 6 request auth mỗi lần chạy) | `./infra/scripts/demo-p2.sh` |
 | Demo P3 (role Mod, overwrite kênh, ban/gỡ ban; 6 request auth mỗi lần chạy) | `./infra/scripts/demo-p3.sh` |
+| Demo P4 (nhắn tin, reaction, phân trang; 6 request auth mỗi lần chạy; thêm `DEMO_STOP_COMMUNITY=1 COMPOSE_PROJECT=<project>` để dừng Community và xem 503) | `./infra/scripts/demo-p4.sh` |
 | Thêm Grafana/Loki/Tempo/Prometheus, bật OTLP | `OTEL_ENDPOINT=http://otel-lgtm:4318 docker compose --profile observability up -d --build --wait` |
 | Kiểm cách ly schema | `./infra/scripts/verify-isolation.sh` |
 | Xóa sạch kể cả dữ liệu | `docker compose down -v` |
@@ -39,15 +40,16 @@ Khóa JWT sinh bởi `gen-jwt-keys.sh` có quyền `644` để container non-roo
 
 ### Cổng
 
-Chỉ gateway :8080 được publish trong các service ứng dụng; identity và community chỉ truy cập được qua gateway (trong network compose) và cổng actuator của mọi service không publish.
+Chỉ gateway :8080 được publish trong các service ứng dụng; identity, community và messaging chỉ truy cập được qua gateway (trong network compose) và cổng actuator của mọi service không publish.
 
 | Service | Cổng app | Cổng actuator | Publish ra host |
 |---------|---------|---------------|-----------------|
 | api-gateway | 8080 | 8180 | `127.0.0.1:8080` |
 | identity-service | 8081 | 8181 | không |
 | community-service | 8082 | 8182 | không |
+| messaging-service | 8083 | 8183 | không |
 
-Gateway giới hạn tần suất bằng Redis (NFR-013): `/api/v1/auth/**` khoảng 10 request/phút/IP, API có token khoảng 100 request/phút/user, xem trước invite khoảng 30 request/phút/IP; vượt mức trả 429. `infra/scripts/demo-p1.sh` tốn 4 request auth và `demo-p2.sh` và `demo-p3.sh` tốn 6 mỗi lần chạy; hai lần chạy liên tiếp trong 1 phút (6 + 6 > 10, kể cả xen kẽ `demo-p2.sh` và `demo-p3.sh`) sẽ gặp 429, chờ 1 phút rồi chạy lại. Swagger UI gộp ở `http://127.0.0.1:8080/swagger-ui.html`.
+Gateway giới hạn tần suất bằng Redis (NFR-013): `/api/v1/auth/**` khoảng 10 request/phút/IP, API có token khoảng 100 request/phút/user, xem trước invite khoảng 30 request/phút/IP, gửi tin nhắn 5 tin/5 giây/user (bền vững 60/phút); vượt mức trả 429. `infra/scripts/demo-p1.sh` tốn 4 request auth và `demo-p2.sh` và `demo-p3.sh` tốn 6 mỗi lần chạy; hai lần chạy liên tiếp trong 1 phút (6 + 6 > 10, kể cả xen kẽ `demo-p2.sh` và `demo-p3.sh`) sẽ gặp 429, chờ 1 phút rồi chạy lại. Swagger UI gộp ở `http://127.0.0.1:8080/swagger-ui.html`.
 
 ## identity-service (P1)
 
@@ -98,6 +100,20 @@ Bị ban thì `POST /api/v1/invites/{code}/accept` trả `403 BANNED_FROM_SERVER
 
 ## api-gateway và observability (P2)
 
-Gateway `:8080` định tuyến `/api/v1/auth/**`, `/api/v1/users/**` tới identity và `/api/v1/servers/**`, `/api/v1/invites/**` tới community, xác thực JWT bằng JWKS của identity, gắn `X-Request-Id`, giới hạn tần suất bằng Redis.
+Gateway `:8080` định tuyến `/api/v1/auth/**`, `/api/v1/users/**` tới identity và `/api/v1/servers/**`, `/api/v1/invites/**` tới community và `/api/v1/channels/**`, `/api/v1/attachments/**` tới messaging, xác thực JWT bằng JWKS của identity, gắn `X-Request-Id`, giới hạn tần suất bằng Redis.
 
 Bật observability: `OTEL_ENDPOINT=http://otel-lgtm:4318 docker compose --profile observability up -d --build --wait`, rồi mở Grafana `http://127.0.0.1:3001` (admin/admin) → Explore → Loki, lọc `{service_name="community-service"} | requestId="<X-Request-Id do demo-p2.sh in>"`. Không đặt `OTEL_ENDPOINT` thì exporter tắt và log vẫn ra stdout dạng JSON. Chi tiết ở [observability.md](docs/02-architecture/observability.md).
+
+## messaging-service (P4)
+
+Gọi qua gateway; cổng app 8083, gRPC 9093 (nội bộ), gọi `community-service` gRPC `:9092` để kiểm quyền kênh (deadline 300 ms, retry, circuit breaker; Community chết thì gửi tin trả `503 DEPENDENCY_UNAVAILABLE`). Cache quyền Redis TTL 30 s. Biến `CLOUDINARY_*` để trống thì chữ ký/đính kèm chưa dùng được. Mọi endpoint cần `Authorization: Bearer <accessToken>`.
+
+| Endpoint | Mục đích |
+|----------|---------|
+| `POST /api/v1/channels/{channelId}/messages` | Gửi tin `{content, nonce?, replyToId?, attachments?}`; cùng `nonce` trả `200` tin cũ (FR-050, FR-053, FR-058, FR-059) |
+| `PATCH/DELETE /api/v1/channels/{channelId}/messages/{messageId}` | Sửa (tác giả), xóa mềm (FR-051, FR-052) |
+| `GET /api/v1/channels/{channelId}/messages?before=&after=&limit=` | Lịch sử phân trang keyset (FR-055) |
+| `PUT/DELETE .../messages/{messageId}/reactions/{emoji}` | Thả, gỡ reaction idempotent (FR-054) |
+| `POST /api/v1/attachments/signature` | Chữ ký upload Cloudinary `{channelId}` (FR-101) |
+
+Không có `VIEW_CHANNEL` trả `404`, thiếu quyền khác trả `403`. CI: workflow `messaging-service` build, test, image và Trivy như các service khác; workflow `proto` chạy `buf lint` và `buf breaking` so với `main` khi `proto/**` đổi. Chi tiết gRPC ở [grpc-design.md](docs/02-architecture/grpc-design.md).

@@ -6,6 +6,7 @@ on:
     paths: &paths
       - "services/identity-service/**"
       - "libs/**"
+      - "proto/**"
       - "pom.xml"
       - "services/pom.xml"
       - ".mvn/**"

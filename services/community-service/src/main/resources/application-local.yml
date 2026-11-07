@@ -1,4 +1,8 @@
 spring:
+  grpc:
+    server:
+      reflection:
+        enabled: true
   datasource:
     url: jdbc:postgresql://localhost:5432/nexus?currentSchema=community
     username: community_svc

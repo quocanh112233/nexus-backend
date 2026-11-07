@@ -3,10 +3,12 @@ FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /src
 COPY pom.xml mvnw ./
 COPY .mvn .mvn
+COPY proto/ proto/
 COPY libs/ libs/
 COPY services/pom.xml services/
 COPY services/identity-service/pom.xml services/identity-service/
 COPY services/community-service/pom.xml services/community-service/
+COPY services/messaging-service/pom.xml services/messaging-service/
 COPY gateways/pom.xml gateways/
 COPY gateways/api-gateway/pom.xml gateways/api-gateway/
 RUN --mount=type=cache,target=/root/.m2 ./mvnw -q -pl services/identity-service -am dependency:go-offline
@@ -27,7 +29,7 @@ COPY --from=extract /x/out/snapshot-dependencies/ ./
 COPY --from=extract /x/out/application/ ./
 USER 10001
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
-EXPOSE 8081
+EXPOSE 8081 9091
 HEALTHCHECK --interval=10s --timeout=3s --start-period=40s --retries=5 \
   CMD wget -qO- http://localhost:8181/actuator/health/readiness || exit 1
 ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]

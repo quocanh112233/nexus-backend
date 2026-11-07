@@ -43,6 +43,18 @@ class ArchitectureTest {
           .resideInAnyPackage(
               "com.nexus.community.infrastructure..", "com.nexus.community.interfaces..");
 
+  // Kịch bản: class sinh từ proto chỉ xuất hiện ở tầng interfaces.grpc
+  // Input: mọi class trong com.nexus.community.domain và application
+  // Output: không class nào phụ thuộc com.nexus.proto
+  @ArchTest
+  static final ArchRule domainAndApplicationDoNotDependOnProto =
+      noClasses()
+          .that()
+          .resideInAnyPackage("com.nexus.community.domain..", "com.nexus.community.application..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("com.nexus.proto..");
+
   // Kịch bản: tầng interfaces không gọi thẳng hạ tầng
   // Input: mọi class trong com.nexus.community.interfaces
   // Output: không class nào phụ thuộc infrastructure

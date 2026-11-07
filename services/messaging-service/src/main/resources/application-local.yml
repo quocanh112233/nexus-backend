@@ -1,0 +1,18 @@
+spring:
+  grpc:
+    server:
+      reflection:
+        enabled: true
+  datasource:
+    url: jdbc:postgresql://localhost:5432/nexus?currentSchema=messaging
+    username: messaging_svc
+    password: ${DB_PASSWORD:messaging_svc}
+
+app:
+  jwt:
+    jwks-uri: ${JWKS_URI:http://localhost:8081/.well-known/jwks.json}
+
+logging:
+  structured:
+    format:
+      console:

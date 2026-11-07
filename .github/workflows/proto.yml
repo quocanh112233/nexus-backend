@@ -8,5 +8,19 @@ on:
 jobs:
   buf:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
-      - run: echo "buf lint/breaking được thêm ở P4"
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: bufbuild/buf-action@37ac33d8960807670a6e9719080e885197b09cc6 # v1.7.0
+        with:
+          input: proto
+          lint: true
+          # breaking mặc định chỉ chạy trên pull_request; so với commit base của PR trong checkout cục bộ (repo private nên không dùng clone_url mặc định)
+          breaking_against: ".git#commit=${{ github.event.pull_request.base.sha }},subdir=proto"
+          format: false
+          push: false
+          archive: false

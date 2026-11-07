@@ -60,6 +60,7 @@ class GatewayRateLimitIT {
   private static final HttpServer JWKS = jwksServer();
   private static final GatewayIT.Stub IDENTITY = new GatewayIT.Stub("identity");
   private static final GatewayIT.Stub COMMUNITY = new GatewayIT.Stub("community");
+  private static final GatewayIT.Stub MESSAGING = new GatewayIT.Stub("messaging");
 
   private final HttpClient http = HttpClient.newHttpClient();
 
@@ -74,6 +75,7 @@ class GatewayRateLimitIT {
     registry.add("REDIS_PORT", () -> REDIS.getMappedPort(6379));
     registry.add("IDENTITY_URI", IDENTITY::uri);
     registry.add("COMMUNITY_URI", COMMUNITY::uri);
+    registry.add("MESSAGING_URI", MESSAGING::uri);
     registry.add("JWKS_URI", () -> "http://127.0.0.1:" + JWKS.getAddress().getPort() + "/jwks");
     registry.add("CORS_ALLOWED_ORIGINS", () -> ORIGIN);
     registry.add("management.server.port", () -> "0");
@@ -85,6 +87,7 @@ class GatewayRateLimitIT {
     REDIS.stop();
     IDENTITY.stop();
     COMMUNITY.stop();
+    MESSAGING.stop();
     JWKS.stop(0);
   }
 
@@ -147,19 +150,40 @@ class GatewayRateLimitIT {
   }
 
   // Kịch bản: hạn mức API là tổng theo user trên mọi route có JWT, không tách theo route
-  // Input: một user gọi luân phiên GET /api/v1/users/me và GET /api/v1/servers, 130 lần
-  // Output: 100 lần đầu 200 (không phải 200), sau đó có 429 RATE_LIMITED
+  // Input: một user gọi luân phiên users/me, servers, channels/c1/messages (GET), 130 lần
+  // Output: 100 lần đầu 200, 30 lần sau có ít nhất một 429
   @Test
   void apiLimitIsSharedAcrossRoutes() throws Exception {
     String user = token(UUID.randomUUID().toString());
     List<Integer> statuses = new ArrayList<>();
+    List<String> paths =
+        List.of("/api/v1/users/me", "/api/v1/servers", "/api/v1/channels/c1/messages");
     for (int i = 0; i < 130; i++) {
-      String path = i % 2 == 0 ? "/api/v1/users/me" : "/api/v1/servers";
+      String path = paths.get(i % 3);
       statuses.add(send("GET", path, user, Map.of()).statusCode());
     }
 
     assertThat(statuses.subList(0, 100)).containsOnly(200);
     assertThat(statuses.subList(100, 130)).contains(429);
+  }
+
+  // Kịch bản: gửi tin có bucket riêng burst 5 nên request thứ 6 trong burst bị chặn
+  // Input: 8 POST /api/v1/channels/c1/messages liên tiếp cùng sub, rồi 1 GET cùng sub
+  // Output: 5 đầu 200; sau đó có 429 RATE_LIMITED kèm Retry-After; GET đọc tin vẫn 200
+  @Test
+  void sendMessageRouteLimitsSixthRequestInBurst() throws Exception {
+    String user = token(UUID.randomUUID().toString());
+    List<HttpResponse<String>> responses = new ArrayList<>();
+    for (int i = 0; i < 8; i++) {
+      responses.add(send("POST", "/api/v1/channels/c1/messages", user, Map.of()));
+    }
+
+    assertThat(responses.subList(0, 5)).allSatisfy(r -> assertThat(r.statusCode()).isEqualTo(200));
+    HttpResponse<String> limited = firstLimited(responses, 5);
+    assertThat(json(limited).get("code").asText()).isEqualTo("RATE_LIMITED");
+    assertThat(limited.headers().firstValue("Retry-After")).isPresent();
+    assertThat(send("GET", "/api/v1/channels/c1/messages", user, Map.of()).statusCode())
+        .isEqualTo(200);
   }
 
   // Kịch bản: xem trước invite công khai bị chặn theo IP kết nối để không dò được mã, bucket riêng

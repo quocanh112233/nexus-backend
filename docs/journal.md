@@ -1,4 +1,4 @@
-# Nhật ký học (P0-P3)
+# Nhật ký học (P0-P4)
 
 - Cách ly schema bằng user DB riêng: mỗi service chỉ thấy schema của mình, `permission denied` ở mức DB mạnh hơn quy ước trong code.
 - DDD 4 lớp + DAO: `domain` thuần Java, JPA entity và mapper nằm ở `infrastructure/persistence`; ArchUnit giữ ranh giới này.
@@ -18,6 +18,44 @@
 - Đổi chỗ `position` của role vi phạm unique `(server_id, position)` ở giữa chừng, nên constraint phải `DEFERRABLE INITIALLY DEFERRED` để chỉ kiểm khi commit.
 - Race ban × join: `SELECT` kiểm ban rồi `INSERT` member không đủ vì ban có thể chen vào giữa hai câu lệnh; `pg_advisory_xact_lock` theo cặp `(server, user)` ở cả join, ban, gỡ ban và kick tuần tự hóa chúng. Bỏ lời gọi khóa ở `AcceptInviteUseCase` thì `BanJoinConcurrencyIT` fail ngay vòng đầu (member bị ban); IT dùng nhiều accept song song mỗi vòng để cửa sổ race đủ rộng.
 - Ban là audit tối thiểu bằng chính dữ liệu nghiệp vụ: dòng `server_bans` đã lưu `bannedBy`, `reason`, `createdAt` nên không cần bảng audit riêng.
+
+## P4 Messaging + gRPC
+
+- gRPC cần deadline ở mỗi call, retry chỉ cho `UNAVAILABLE` của RPC đọc, và circuit breaker theo callee; kiểm tra quyền **fail-closed**: Community chết thì gửi tin trả `503 DEPENDENCY_UNAVAILABLE`, không cho qua.
+- Cache quyền theo cache-aside (`perm:{channelId}:{userId}`, TTL 30 s) nhưng **fail-open** ở phía cache: Redis lỗi thì coi như miss và gọi gRPC, không làm sập luồng gửi tin.
+- Boot 4.1 tự lo gRPC server observation và có interceptor OAuth2 riêng, nên `nexus-common-grpc` phải chặn interceptor trùng và không thêm observation server thứ hai; client thì phải tự gắn `ObservationGrpcClientInterceptor`.
+- Race `nonce`: unique `(author_id, nonce)` quyết định bên thắng, bên thua bắt `DataIntegrityViolationException` và chạy lại **ngoài** transaction đã hỏng để đọc tin đã có.
+- Keyset + `EXPLAIN`: khi một kênh chiếm ~50% bảng, planner chọn pkey (quét ngược) thay vì index `(channel_id, id DESC)`; IT dữ liệu dùng 100 kênh x 2000 tin để plan phản ánh đúng thực tế.
+
+### Rủi ro đã biết (P4)
+
+- Polling `after=` có thể lỡ tin commit trễ (id sinh trước, commit sau); P6 realtime xử lý.
+- Cache quyền cũ tối đa 30 s sau kick/ban/đổi role cho tới khi P5 xóa cache theo event.
+- Thứ tự `mentionUserIds` khi đọc lại không được đảm bảo (đọc theo `userId`, `message_mentions` không có cột thứ tự).
+- Xóa mềm xóa dòng attachment nên file Cloudinary thành mồ côi.
+- Gọi HTTP tới Cloudinary nằm trong transaction gửi tin (tối đa 5 file x 5 s giữ một kết nối DB).
+
+### Bài tập gRPC
+
+Theo R15, bài 1, 2, 4, 5 cần công cụ/sửa code tạm không có sẵn (không có `grpcurl`, không sửa code Java ở bước này): **chưa làm, bạn tự chạy**. Chỉ bài 3 và kiểm Tempo được thử ở 15B.
+
+1. `grpcurl` token hợp lệ / hết hạn / không token: chưa làm.
+2. `Thread.sleep(500)` tạm ở Community, `DEADLINE_EXCEEDED` và span đỏ: chưa làm.
+3. Tắt Community, gửi 1 + 20 tin: cả 21 lần 503 `DEPENDENCY_UNAVAILABLE`; lần gửi đầu và 16 lần tiếp theo (17 lần) chậm 0,15 đến 0,18 s (gọi gRPC thất bại rồi retry), 4 lần cuối trong chuỗi 21 lần còn 0,017 đến 0,022 s (breaker `OPEN`, không gọi gRPC). Chưa xem `CLOSED → OPEN → HALF_OPEN` trên Grafana (`resilience4j_circuitbreaker_state`), bạn tự xem; bật lại Community và chờ ~12 s thì gửi lại được 201 (0,29 s).
+4. `buf breaking` tương thích vs không tương thích: chưa làm (workflow `proto.yml` đã viết, chưa chạy trên GitHub).
+5. `--scale community-service=2` và `round_robin`: chưa làm.
+
+### Kết quả demo, Tempo và breaker
+
+Chạy thật bằng `docker compose -p nexus-p4demo --profile observability` (project cô lập, `POSTGRES_PORT=55432`), lần đầu có messaging-service trong stack.
+
+- **Lỗi tích hợp phát hiện ở lần chạy đầu**: gửi tin nào cũng trả `503 DEPENDENCY_UNAVAILABLE` dù Community đang chạy. Nguyên nhân: `ManagedChannelBuilder.forTarget(target)` thiếu `usePlaintext()`, client nói TLS còn server Community nghe plaintext (log Community: `HTTP/2 client preface string missing or corrupt`, byte đầu `16030301` là TLS ClientHello). Đã sửa bằng `.usePlaintext()` (TLS/mTLS ở backlog BL-13) và test `CommunityChannelPlaintextTest` dựng kênh qua `CommunityChannelConfig.newChannel` tới server Netty plaintext thật; test đỏ với code cũ (`DependencyUnavailableException: community call failed`), xanh sau khi sửa.
+- **Bài học**: unit/IT in-process (`InProcessChannelBuilder`) không bắt được lỗi TLS/plaintext vì không đi qua transport thật; cần ít nhất một test qua Netty thật hoặc chạy compose.
+- **Demo trên HEAD đã sửa** (`demo-p4.sh`): đủ 13 bước nhắn tin đạt (201; 200 cùng id khi trùng nonce; reply; reaction 204 và lịch sử thấy 👍 count=1 me=true; sửa có `editedAt`; `after=` tăng dần; người ngoài 404; xóa 204; tombstone `deleted=true, content=null`). Phần 503: `FLUSHALL` redis, dừng Community, lần gửi đầu 503 sau 0,159 s (< 1 s), 20 lần tiếp theo như bài 3.
+- **Cold-start**: kênh gRPC gọi `getState(true)` ngay khi dựng để kết nối sớm. Gửi tin đầu tiên ngay sau khi stack khởi động: 201, 1075 ms phía messaging (gồm khởi tạo lạnh, không riêng gRPC); restart riêng messaging-service rồi gửi ngay: 201, 1100 ms. Chỉ 2 mẫu, chưa thấy 503 lúc lạnh. Lần chạy trước khi sửa từng có một lần gửi đầu 503 sau 0,84 s sau khi bật observability; chưa rõ nguyên nhân (nghi deadline 300 ms bị vượt khi gRPC chạy lạnh), nên coi là rủi ro đã biết: deadline giữ 300 ms theo spec, không nới.
+- **Tempo** (trên HEAD đã sửa): trace `63c371912a4064322ec9ca84ef9259d1` của lần gửi tin bước 4 có span của `api-gateway`, `messaging-service` và `community-service`; span `PermissionService/CheckChannelPermissions` CLIENT (messaging) là cha của span SERVER (community). Đạt.
+- Bài 1, 2, 4, 5: chưa làm, bạn tự chạy. Gợi ý: (1) `grpcurl -plaintext -H "authorization: Bearer <jwt>" localhost:9092 nexus.community.v1.PermissionService/CheckChannelPermissions` (cổng 9092 chưa publish ra host, thêm tạm vào compose hoặc chạy từ container); (2) thêm tạm `Thread.sleep(500)` vào `PermissionGrpcService`; (4) mở PR thử đổi số field trong `proto/`; (5) `docker compose up -d --scale community-service=2`.
+- Lưu ý CI (dự kiến, workflow chưa chạy trên GitHub): PR đầu tiên thêm `proto/` vào `main` sẽ đỏ `buf breaking` (base chưa có `proto/`); gắn nhãn `buf skip breaking` xong phải push thêm một commit mới thì job mới chạy lại với nhãn.
 
 ## Bằng chứng observability (Task 13)
 

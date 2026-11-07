@@ -3,10 +3,12 @@ FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /src
 COPY pom.xml mvnw ./
 COPY .mvn .mvn
+COPY proto/ proto/
 COPY libs/ libs/
 COPY services/pom.xml services/
 COPY services/identity-service/pom.xml services/identity-service/
 COPY services/community-service/pom.xml services/community-service/
+COPY services/messaging-service/pom.xml services/messaging-service/
 COPY gateways/pom.xml gateways/
 COPY gateways/api-gateway/pom.xml gateways/api-gateway/
 RUN --mount=type=cache,target=/root/.m2 ./mvnw -q -pl gateways/api-gateway -am dependency:go-offline

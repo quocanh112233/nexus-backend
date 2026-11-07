@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package nexus.community.v1;
+
+option java_multiple_files = true;
+option java_package = "com.nexus.proto.community.v1";
+
+// Trả lời câu hỏi quyền và tư cách thành viên, nguồn sự thật là Community
+service PermissionService {
+  rpc CheckChannelPermissions(CheckChannelPermissionsRequest) returns (CheckChannelPermissionsResponse);
+  rpc CheckServerMembership(CheckServerMembershipRequest) returns (CheckServerMembershipResponse);
+}
+
+// Các quyền cấp kênh
+enum Permission {
+  PERMISSION_UNSPECIFIED = 0;
+  PERMISSION_VIEW_CHANNEL = 1;
+  PERMISSION_SEND_MESSAGES = 2;
+  PERMISSION_READ_MESSAGE_HISTORY = 3;
+  PERMISSION_ATTACH_FILES = 4;
+  PERMISSION_ADD_REACTIONS = 5;
+  PERMISSION_MANAGE_MESSAGES = 6;
+}
+
+// Yêu cầu lấy quyền của user trên kênh
+message CheckChannelPermissionsRequest {
+  string user_id = 1;
+  string channel_id = 2;
+}
+
+// Server chứa kênh và các quyền user có (rỗng nếu không phải member)
+message CheckChannelPermissionsResponse {
+  string server_id = 1;
+  repeated Permission granted = 2;
+}
+
+// Yêu cầu kiểm tra user có là member của server
+message CheckServerMembershipRequest {
+  string user_id = 1;
+  string server_id = 2;
+}
+
+// Kết quả kiểm tra tư cách thành viên
+message CheckServerMembershipResponse {
+  bool is_member = 1;
+}

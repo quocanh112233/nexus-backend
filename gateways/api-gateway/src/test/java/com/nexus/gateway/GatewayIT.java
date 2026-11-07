@@ -55,6 +55,7 @@ class GatewayIT {
   private static final TestJwt.JwksServer JWKS = JWT.serveJwks();
   private static final Stub IDENTITY = new Stub("identity");
   private static final Stub COMMUNITY = new Stub("community");
+  private static final Stub MESSAGING = new Stub("messaging");
   private static final int CLOSED_PORT = closedPort();
 
   private final HttpClient http = HttpClient.newHttpClient();
@@ -66,6 +67,7 @@ class GatewayIT {
   static void properties(DynamicPropertyRegistry registry) {
     registry.add("IDENTITY_URI", IDENTITY::uri);
     registry.add("COMMUNITY_URI", COMMUNITY::uri);
+    registry.add("MESSAGING_URI", MESSAGING::uri);
     registry.add("JWKS_URI", JWKS::uri);
     registry.add("CORS_ALLOWED_ORIGINS", () -> ORIGIN + ",http://localhost:5173");
     registry.add("GATEWAY_RESPONSE_TIMEOUT", () -> "2s");
@@ -78,6 +80,7 @@ class GatewayIT {
   static void stopServers() {
     IDENTITY.stop();
     COMMUNITY.stop();
+    MESSAGING.stop();
     JWKS.close();
   }
 
@@ -356,8 +359,8 @@ class GatewayIT {
   }
 
   // Kịch bản: tài liệu OpenAPI của từng service đi qua gateway không cần JWT
-  // Input: GET /docs/identity/v3/api-docs, /docs/community/v3/api-docs, swagger-config
-  // Output: 200 từ đúng service với đường /v3/api-docs; swagger-config liệt kê hai url
+  // Input: GET /docs/{identity,community,messaging}/v3/api-docs, swagger-config
+  // Output: 200 từ đúng service với đường /v3/api-docs; swagger-config liệt kê ba url
   @Test
   void docsRoutesAreProxiedAndPublic() throws Exception {
     HttpResponse<String> identity = send("GET", "/docs/identity/v3/api-docs", null, Map.of());
@@ -369,13 +372,18 @@ class GatewayIT {
     assertThat(community.statusCode()).isEqualTo(200);
     assertThat(json(community).get("service").asText()).isEqualTo("community");
     assertThat(COMMUNITY.last.get().path()).isEqualTo("/v3/api-docs");
+    HttpResponse<String> messaging = send("GET", "/docs/messaging/v3/api-docs", null, Map.of());
+    assertThat(messaging.statusCode()).isEqualTo(200);
+    assertThat(json(messaging).get("service").asText()).isEqualTo("messaging");
+    assertThat(MESSAGING.last.get().path()).isEqualTo("/v3/api-docs");
 
     HttpResponse<String> config = send("GET", "/v3/api-docs/swagger-config", null, Map.of());
 
     assertThat(config.statusCode()).isEqualTo(200);
     assertThat(config.body())
         .contains("/docs/identity/v3/api-docs")
-        .contains("/docs/community/v3/api-docs");
+        .contains("/docs/community/v3/api-docs")
+        .contains("/docs/messaging/v3/api-docs");
     assertThat(send("GET", "/swagger-ui.html", null, Map.of()).statusCode()).isLessThan(400);
   }
 
@@ -392,6 +400,49 @@ class GatewayIT {
     assertThat(COMMUNITY.last.get().path()).isEqualTo("/api/v1/servers/123");
     assertThat(json(send("GET", "/api/v1/users/me", token, Map.of())).get("service").asText())
         .isEqualTo("identity");
+  }
+
+  // Kịch bản: /api/v1/channels/** tới messaging và giữ Bearer
+  // Input: GET /api/v1/channels/c1/messages với token hợp lệ
+  // Output: 200 từ messaging giả, đường dẫn giữ nguyên, nhận đúng Bearer
+  @Test
+  void channelsRouteForwardsToMessagingWithBearer() throws Exception {
+    String token = JWT.token(UUID.randomUUID(), "alice");
+
+    HttpResponse<String> response = send("GET", "/api/v1/channels/c1/messages", token, Map.of());
+
+    assertThat(json(response).get("service").asText()).isEqualTo("messaging");
+    assertThat(MESSAGING.last().path()).isEqualTo("/api/v1/channels/c1/messages");
+    assertThat(MESSAGING.last().authorization()).isEqualTo("Bearer " + token);
+  }
+
+  // Kịch bản: /api/v1/attachments/** tới messaging
+  // Input: POST /api/v1/attachments với token hợp lệ
+  // Output: 200 từ messaging giả, đường dẫn giữ nguyên
+  @Test
+  void attachmentsRouteForwardsToMessaging() throws Exception {
+    String token = JWT.token(UUID.randomUUID(), "alice");
+
+    HttpResponse<String> response = send("POST", "/api/v1/attachments", token, Map.of());
+
+    assertThat(json(response).get("service").asText()).isEqualTo("messaging");
+    assertThat(MESSAGING.last().path()).isEqualTo("/api/v1/attachments");
+  }
+
+  // Kịch bản: route messaging không công khai
+  // Input: GET /api/v1/channels/c1/messages và POST /api/v1/attachments không Authorization
+  // Output: cả hai 401 UNAUTHENTICATED và messaging giả không nhận request nào
+  @Test
+  void messagingRouteRequiresJwt() throws Exception {
+    MESSAGING.reset();
+
+    HttpResponse<String> channels = send("GET", "/api/v1/channels/c1/messages", null, Map.of());
+    HttpResponse<String> attachments = send("POST", "/api/v1/attachments", null, Map.of());
+
+    assertThat(channels.statusCode()).isEqualTo(401);
+    assertThat(attachments.statusCode()).isEqualTo(401);
+    assertThat(json(channels).get("code").asText()).isEqualTo("UNAUTHENTICATED");
+    assertThat(MESSAGING.last()).isNull();
   }
 
   // Gửi request tới gateway với method, token Bearer và header tùy chọn

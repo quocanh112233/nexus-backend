@@ -13,7 +13,7 @@ Chỉ khi caller **cần câu trả lời để tiếp tục** và đó là **tr
 | `messaging.v1.ChannelAccessService/CheckChannelAccess` | messaging | realtime-gateway | SUBSCRIBE `/topic/channels/{channelId}`, gửi typing | 500 ms (có thể gọi tiếp Community) |
 | `identity.v1.UserService/GetUser` | identity | messaging | Gửi lời mời kết bạn (WF-07) | 300 ms |
 | `identity.v1.UserService/BatchGetUsers` | identity | (dự phòng, chưa dùng ở MVP) | | 500 ms |
-| `community.v1.PermissionService/ListServerIdsForUser` | community | presence | Nạp bù projection quan hệ (tập server của user) khi chưa có hoặc hết hạn (WF-10) | 500 ms |
+| `community.v1.PermissionService/ListServerIdsForUser` | community | presence | Nạp bù projection quan hệ (tập server của user) khi chưa có hoặc hết hạn (WF-10). **Hoãn sang P6** (thêm RPC là thay đổi tương thích); P4 chưa có RPC này trong proto | 500 ms |
 | `messaging.v1.SocialService/ListFriendIds` | messaging | presence | Nạp bù projection quan hệ (tập bạn của user) (WF-10) | 500 ms |
 
 Kick/ban **không cần RPC**: kiểm tra ban khi join nằm trong Community (P-35).
@@ -63,7 +63,7 @@ option java_package = "com.nexus.proto.community.v1";
 service PermissionService {
   rpc CheckChannelPermissions(CheckChannelPermissionsRequest) returns (CheckChannelPermissionsResponse);
   rpc CheckServerMembership(CheckServerMembershipRequest) returns (CheckServerMembershipResponse);
-  rpc ListServerIdsForUser(ListServerIdsForUserRequest) returns (ListServerIdsForUserResponse);
+  // P6 thêm: rpc ListServerIdsForUser(ListServerIdsForUserRequest) returns (ListServerIdsForUserResponse);
 }
 
 enum Permission {
@@ -95,14 +95,10 @@ message CheckServerMembershipResponse {
   bool is_member = 1;
 }
 
-message ListServerIdsForUserRequest {
-  string user_id = 1;
-}
-
-message ListServerIdsForUserResponse {
-  repeated string server_ids = 1;
-}
+// P6 thêm: ListServerIdsForUserRequest { string user_id = 1; } và ListServerIdsForUserResponse { repeated string server_ids = 1; }
 ```
+
+P4 chỉ có `errors.proto`, `permission_service.proto` (2 RPC) và `user_service.proto`; `ChannelAccessService` (P6) và `SocialService` (P7) chưa có file proto.
 
 File `messaging/v1/channel_access_service.proto`, `messaging/v1/social_service.proto` và `identity/v1/user_service.proto` (`BatchGetUsersRequest.user_ids` tối đa 100 phần tử; `granted` ở trên là các quyền kênh user có):
 
@@ -157,7 +153,8 @@ Lý do `CheckChannelPermissions` trả **toàn bộ quyền kênh** thay vì h�
 | Tình huống ở server | Status gRPC | Caller dịch thành (REST biên) |
 |--------------------|------------|-------------------------------|
 | Tham số sai (UUID hỏng) | `INVALID_ARGUMENT` | 500 (lỗi lập trình phía caller), log error |
-| Kênh/server/user không tồn tại | `NOT_FOUND` | 404 |
+| Kênh/user không tồn tại | `NOT_FOUND` | 404 |
+| Server không tồn tại (với `CheckServerMembership`) | `OK` với `is_member=false` (không `NOT_FOUND`; cố ý, fail-closed) | caller coi như không phải member |
 | Không phải member (với `CheckChannelPermissions`) | `OK` với `granted` rỗng | 403 |
 | JWT trong metadata sai/hết hạn | `UNAUTHENTICATED` | 401 |
 | Lỗi tạm thời, service đang khởi động | `UNAVAILABLE` | retry → 503 `DEPENDENCY_UNAVAILABLE` |
@@ -166,6 +163,7 @@ Lý do `CheckChannelPermissions` trả **toàn bộ quyền kênh** thay vì h�
 
 - Chi tiết bổ sung qua `google.rpc.Status` + `ErrorInfo{reason, domain="nexus.community"}`; `reason` khớp `code` của lỗi REST ([api-conventions.md](api-conventions.md#4-định-dạng-lỗi)).
 - "Không có quyền" là **câu trả lời hợp lệ** (`OK`), không phải lỗi.
+- Quy tắc ở REST của messaging: user **không có `VIEW_CHANNEL`** (hoặc không phải member) → `404` (không lộ kênh có tồn tại); có `VIEW_CHANNEL` nhưng thiếu quyền của hành động → `403 PERMISSION_DENIED`.
 - Server không bao giờ trả stack trace trong message.
 
 ## 7. Metadata
@@ -183,7 +181,8 @@ Call kiểm tra khi SUBSCRIBE (realtime-gateway) vẫn chuyển JWT của user �
 
 | Việc | Lựa chọn | Ghi chú |
 |------|---------|---------|
-| Server/client starter | `org.springframework.grpc:spring-grpc-spring-boot-starter` (P-10) | Phương án thay thế: `net.devh:grpc-spring-boot-starter` |
+| Server | `spring-boot-starter-grpc-server` (Boot 4.1.2 quản lý sẵn, spring-grpc 1.1.2; thay cho `spring-grpc-spring-boot-starter` của P-10) | Phương án thay thế: `net.devh:grpc-spring-boot-starter`. Boot tự đăng ký observation cho gRPC server (span, metric) và có interceptor OAuth2 riêng nên `libs/nexus-common-grpc` chặn bản trùng |
+| Client | `ManagedChannelBuilder` dựng tay trong `infrastructure/grpc` | Retry bằng service config `retryPolicy`, circuit breaker Resilience4j; gắn `ObservationGrpcClientInterceptor` thủ công để lan truyền trace |
 | Sinh code | `io.github.ascopes:protobuf-maven-plugin` | Tự tải `protoc` + plugin `grpc-java` |
 | Lint / breaking | `buf` CLI (chạy trong CI bằng `bufbuild/buf-action`) | |
 | Health | `grpc-services` (`grpc.health.v1`) | Compose healthcheck vẫn dùng HTTP actuator |

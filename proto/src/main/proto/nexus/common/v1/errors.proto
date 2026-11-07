@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package nexus.common.v1;
+
+option java_multiple_files = true;
+option java_package = "com.nexus.proto.common.v1";
+
+// Mã lý do lỗi dùng chung trong ErrorInfo.reason của google.rpc.Status
+enum ErrorReason {
+  ERROR_REASON_UNSPECIFIED = 0;
+  ERROR_REASON_VALIDATION_FAILED = 1;
+  ERROR_REASON_NOT_FOUND = 2;
+  ERROR_REASON_PERMISSION_DENIED = 3;
+  ERROR_REASON_UNAUTHENTICATED = 4;
+}

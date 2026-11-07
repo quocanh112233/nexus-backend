@@ -6,6 +6,7 @@ on:
     paths: &paths
       - "gateways/api-gateway/**"
       - "libs/**"
+      - "proto/**"
       - "pom.xml"
       - "gateways/pom.xml"
       - ".mvn/**"

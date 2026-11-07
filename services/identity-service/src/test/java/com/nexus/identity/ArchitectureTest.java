@@ -41,6 +41,19 @@ class ArchitectureTest {
               "com.nexus.identity.infrastructure..", "com.nexus.identity.interfaces..")
           .allowEmptyShould(true);
 
+  // Kịch bản: class sinh từ proto chỉ xuất hiện ở tầng interfaces.grpc
+  // Input: mọi class trong com.nexus.identity.domain và application
+  // Output: không class nào phụ thuộc com.nexus.proto
+  @ArchTest
+  static final ArchRule domainAndApplicationDoNotDependOnProto =
+      noClasses()
+          .that()
+          .resideInAnyPackage("com.nexus.identity.domain..", "com.nexus.identity.application..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("com.nexus.proto..")
+          .allowEmptyShould(true);
+
   // Kịch bản: tầng interfaces không gọi thẳng hạ tầng
   // Input: mọi class trong com.nexus.identity.interfaces
   // Output: không class nào phụ thuộc infrastructure

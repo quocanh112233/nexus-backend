@@ -113,21 +113,21 @@ Ký hiệu: `[ ]` việc cần làm, `[x]` đã xong — "→" tiêu chí xong.
 
 | # | Việc | Tiêu chí xong |
 |---|------|---------------|
-| 1 | `proto/` module + `community/v1/permission_service.proto`, `identity/v1/user_service.proto`, `common/v1/errors.proto`; `buf.yaml` | `./mvnw -pl proto install` sinh stub; `buf lint` sạch |
-| 2 | `libs/nexus-common-grpc`: interceptor JWT, `x-request-id`, MDC, map exception ↔ status | Unit test interceptor |
-| 3 | Community: `PermissionGrpcService` (`CheckChannelPermissions`, `CheckServerMembership`) dùng `PermissionCalculator` | Test in-process + `grpcurl` thủ công |
-| 4 | Identity: `UserGrpcService` (`GetUser`, `BatchGetUsers`) | Test in-process |
-| 5 | Khung `messaging-service`, Flyway (`channel_refs, messages, message_attachments, message_mentions, reactions, outbox_event, processed_event`) | ArchUnit xanh |
-| 6 | `GrpcChannelPermissionChecker`: deadline 300 ms, retry `UNAVAILABLE` ×2, circuit breaker | Test: server giả chậm 1 s → `DependencyUnavailableException` < 400 ms; 10 lỗi liên tiếp → circuit `OPEN` |
-| 7 | Cache Redis kết quả quyền, chỉ TTL 30 s (P5 chuyển sang key có version theo server + TTL 60 s như [data-model.md](../02-architecture/data-model.md#6-redis-dùng-chung-khác)) | Metric `nexus_permission_cache_hits_total` tăng; gọi lần 2 không có gRPC span |
-| 8 | Gửi tin (FR-050, FR-053, FR-059 lưu mention) với `nonce` idempotent; `channel_refs` ghi từ kết quả gRPC (`server_id`) | IT: gửi 2 lần cùng `nonce` → 1 tin |
-| 9 | Sửa/xóa (FR-051, FR-052), optimistic lock | IT 2 lần sửa đồng thời → 1 `409` |
-| 10 | Reaction (FR-054) `ON CONFLICT DO NOTHING` | IT 50 thread cùng react 1 emoji → 1 dòng |
-| 11 | Lịch sử keyset (FR-055) + index `(channel_id, id DESC)` | `EXPLAIN` dùng Index Scan |
-| 12 | Chữ ký đính kèm + lưu attachment (FR-058, FR-101, FR-102) | `publicId` của user khác → 400 |
-| 13 | Map lỗi gRPC → `503 DEPENDENCY_UNAVAILABLE` / 404 / 403 | `docker compose stop community-service` → gửi tin trả 503 trong < 1 s (khi cache trống) |
-| 14 | Tracing OTel cho gRPC | Tempo thấy span `messaging → community` trong cùng trace |
-| 15 | Dockerfile + compose + workflow messaging; `proto.yml` chạy `buf breaking` | Đổi số field trong PR thử → CI đỏ |
+| [x] 1 | `proto/` module + `community/v1/permission_service.proto`, `identity/v1/user_service.proto`, `common/v1/errors.proto`; `buf.yaml` | `./mvnw -pl proto install` sinh stub; `buf lint` sạch |
+| [x] 2 | `libs/nexus-common-grpc`: interceptor JWT, `x-request-id`, MDC, map exception ↔ status | Unit test interceptor |
+| [x] 3 | Community: `PermissionGrpcService` (`CheckChannelPermissions`, `CheckServerMembership`) dùng `PermissionCalculator` *(`grpcurl` thủ công chưa chạy; `ListServerIdsForUser` hoãn P6)* | Test in-process + `grpcurl` thủ công |
+| [x] 4 | Identity: `UserGrpcService` (`GetUser`, `BatchGetUsers`) | Test in-process |
+| [x] 5 | Khung `messaging-service`, Flyway (`channel_refs, messages, message_attachments, message_mentions, reactions, outbox_event, processed_event`) | ArchUnit xanh |
+| [x] 6 | `GrpcChannelPermissionChecker`: deadline 300 ms, retry `UNAVAILABLE` ×2, circuit breaker *(client dựng bằng `ManagedChannelBuilder`, retry bằng service config)* | Test: server giả chậm 1 s → `DependencyUnavailableException` < 400 ms; 10 lỗi liên tiếp → circuit `OPEN` |
+| [x] 7 | Cache Redis kết quả quyền, chỉ TTL 30 s (P5 chuyển sang key có version theo server + TTL 60 s như [data-model.md](../02-architecture/data-model.md#6-redis-dùng-chung-khác)) *(counter `nexus.permission.cache.hits/misses`; khóa `perm:{channelId}:{userId}`)* | Metric `nexus_permission_cache_hits_total` tăng; gọi lần 2 không có gRPC span |
+| [x] 8 | Gửi tin (FR-050, FR-053, FR-059 lưu mention) với `nonce` idempotent; `channel_refs` ghi từ kết quả gRPC (`server_id`) | IT: gửi 2 lần cùng `nonce` → 1 tin |
+| [x] 9 | Sửa/xóa (FR-051, FR-052), optimistic lock | IT 2 lần sửa đồng thời → 1 `409` |
+| [x] 10 | Reaction (FR-054) `ON CONFLICT DO NOTHING` | IT 50 thread cùng react 1 emoji → 1 dòng |
+| [x] 11 | Lịch sử keyset (FR-055) + index `(channel_id, id DESC)` | `EXPLAIN` dùng Index Scan |
+| [x] 12 | Chữ ký đính kèm + lưu attachment (FR-058, FR-101, FR-102) | `publicId` của user khác → 400 |
+| [x] 13 | Map lỗi gRPC → `503 DEPENDENCY_UNAVAILABLE` / 404 / 403 *(404 khi không có `VIEW_CHANNEL`, 403 khi thiếu quyền khác; kiểm bằng compose thật: 503 sau 0,159 s, breaker mở thì ~0,02 s; lỗi `usePlaintext()` phát hiện và sửa ở 15B)* | `docker compose stop community-service` → gửi tin trả 503 trong < 1 s (khi cache trống) |
+| [x] 14 | Tracing OTel cho gRPC *(Boot tự đăng ký server observation, client gắn interceptor thủ công; Tempo thấy gateway, messaging và community trong cùng trace, kiểm ở 15B)* | Tempo thấy span `messaging → community` trong cùng trace |
+| [x] 15 | Dockerfile + compose + workflow messaging; `proto.yml` chạy `buf breaking` *(workflow đã viết, chưa chạy trên GitHub; `proto.yml` dùng `bufbuild/buf-action` ghim SHA v1.7.0)* | Đổi số field trong PR thử → CI đỏ |
 
 **Bài tập gRPC (làm và ghi kết quả vào `docs/journal.md`):**
 1. Gọi `CheckChannelPermissions` bằng `grpcurl` với token hợp lệ / hết hạn / không token — ghi status nhận được.
@@ -135,6 +135,8 @@ Ký hiệu: `[ ]` việc cần làm, `[x]` đã xong — "→" tiêu chí xong.
 3. Tắt Community, gửi 20 tin → xem trạng thái circuit breaker trên Grafana chuyển `CLOSED → OPEN → HALF_OPEN`.
 4. Thêm field mới vào response (tương thích) rồi thử đổi kiểu field (không tương thích) → thấy `buf breaking` phân biệt.
 5. `docker compose up --scale community-service=2` → xác nhận `round_robin` chia request (log 2 instance).
+
+*Trạng thái bài tập gRPC: chưa tick; kết quả (hoặc "chưa làm") ghi ở [journal.md](../journal.md#p4-messaging--grpc).*
 
 **Demo (M1):** đăng nhập → tạo server → chat (poll 3 s) qua 3 service + gateway; tắt Community → lỗi 503 có kiểm soát.
 

@@ -140,6 +140,11 @@ gRPC server: `messaging.v1.ChannelAccessService` — `CheckChannelAccess`; `mess
 gRPC client: `community.v1.PermissionService/CheckChannelPermissions`, `identity.v1.UserService/GetUser`.
 Nghe: `community.events` (`ChannelCreated`, `ChannelDeleted`, `ServerDeleted` → `channel_refs`; `RoleUpdated`, `RoleDeleted`, `MemberRolesChanged`, `MemberLeft`, `MemberKicked`, `MemberBanned`, `ChannelPermissionsChanged`, `ServerDeleted` → xóa cache quyền).
 
+**Trạng thái P4:** đã có gửi/sửa/xóa/lịch sử/reaction/chữ ký đính kèm; chưa có bạn bè, DM, gRPC server `ChannelAccessService` (P6) và `SocialService` (P7), chưa nghe `community.events` (P5, cache quyền P4 chỉ hết hạn theo TTL 30 s). Chi tiết thực tế:
+- Gửi tin: body `{content, nonce?, replyToId?, attachments?[{publicId, resourceType, originalFilename?}]}`; `resourceType` là `image|raw|video` (client gửi vì Cloudinary Admin API cần); `content` được rỗng khi có attachment; gửi lại cùng `nonce` trả `200` với tin cũ. Server tự lấy `url`, `contentType`, `bytes` từ Cloudinary và chỉ nhận `publicId` nằm trong thư mục upload của chính user trong kênh (khác → `400`).
+- Không có `VIEW_CHANNEL` → `404`; thiếu quyền khác → `403`. Xóa tin hai lần đều `204`; sửa nội dung trùng không sinh event. Kiểm tra quyền lỗi hạ tầng (Community chết, hết deadline, breaker mở) → `503 DEPENDENCY_UNAVAILABLE`.
+- Rate limit gửi tin ở gateway: burst 5, bền vững 60/phút/user.
+
 ## 4. presence-service
 
 **Trách nhiệm:** tính online/offline từ các session WebSocket và **quyết định ai được thấy** (D-18: bạn bè ∪ người chung ≥1 server).

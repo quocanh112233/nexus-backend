@@ -15,7 +15,7 @@ public abstract class IdentityIntegrationTest extends PostgresIntegrationTest {
 
   private static final String JWT_KEY_PATH = TestJwtKeys.writePem(JWT_KEYS.getPrivate()).toString();
 
-  // Trỏ app.jwt.private-key-path tới PEM vừa sinh và nạp cấu hình Cloudinary giả
+  // Trỏ khóa JWT tới PEM vừa sinh, nạp Cloudinary giả, gRPC chọn cổng ngẫu nhiên
   @DynamicPropertySource
   static void jwtKey(DynamicPropertyRegistry registry) {
     registry.add("app.jwt.private-key-path", () -> JWT_KEY_PATH);
@@ -24,5 +24,6 @@ public abstract class IdentityIntegrationTest extends PostgresIntegrationTest {
     registry.add("app.cloudinary.api-secret", () -> TEST_SECRET);
     registry.add("app.cloudinary.upload-preset", () -> "test_preset");
     registry.add("app.cloudinary.folder-root", () -> TEST_ROOT);
+    registry.add("spring.grpc.server.port", () -> 0);
   }
 }
