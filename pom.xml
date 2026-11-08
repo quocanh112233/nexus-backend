@@ -82,6 +82,15 @@
   </dependencyManagement>
 
   <build>
+    <testResources>
+      <testResource>
+        <directory>src/test/resources</directory>
+      </testResource>
+      <testResource>
+        <directory>${maven.multiModuleProjectDirectory}/contracts</directory>
+        <targetPath>contracts</targetPath>
+      </testResource>
+    </testResources>
     <pluginManagement>
       <plugins>
         <plugin>

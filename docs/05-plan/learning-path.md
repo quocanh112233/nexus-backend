@@ -92,7 +92,7 @@ Ba trọng tâm: **(1) kiến trúc microservice, (2) service giao tiếp với 
 
 Không nằm trên đường chính; chỉ làm sau M4 (hoặc khi muốn thử riêng một nhánh git).
 
-| Chủ đề | Bài tập gợi ý | Vì sao để sau |
+| Chủ đề | Hướng mở rộng | Vì sao để sau |
 |-------|---------------|---------------|
 | Kafka | Thay lớp `infrastructure/messaging` bằng Spring Kafka, giữ outbox/inbox; thử replay offset để dựng lại `channel_activity` | Phức tạp hơn RabbitMQ (partition, rebalance) |
 | Saga orchestration có bù trừ | "Ban + xóa toàn bộ tin nhắn của user trong server" (backlog): Community ban → Messaging xóa mềm tin → Notification dọn mention; thêm bước bù khi một bước thất bại | MVP không có giao dịch xuyên service cần bù trừ |
@@ -100,5 +100,5 @@ Không nằm trên đường chính; chỉ làm sau M4 (hoặc khi muốn thử 
 | Service discovery động | Eureka hoặc Consul thay DNS compose | Compose DNS đã đủ |
 | Kubernetes | Helm chart cho toàn hệ thống trên kind/k3d | Ngoài phạm vi (D-10) |
 | Service mesh / mTLS | Linkerd trên K8s; hoặc mTLS gRPC thủ công (BL-13) | Cần K8s |
-| Tách `social-service` | Tách module `social` ra service riêng (BL-12) | Bài tập tốt về "strangler" khi đã có test |
+| Tách `social-service` | Tách module `social` ra service riêng (BL-12) | Thực hành mẫu "strangler" khi đã có test |
 | Consistent hash exchange | Giữ thứ tự theo `channelId` với nhiều consumer | Chỉ cần khi thứ tự trở thành vấn đề thật |

@@ -119,7 +119,7 @@ Ký hiệu: `[ ]` việc cần làm, `[x]` đã xong — "→" tiêu chí xong.
 | [x] 4 | Identity: `UserGrpcService` (`GetUser`, `BatchGetUsers`) | Test in-process |
 | [x] 5 | Khung `messaging-service`, Flyway (`channel_refs, messages, message_attachments, message_mentions, reactions, outbox_event, processed_event`) | ArchUnit xanh |
 | [x] 6 | `GrpcChannelPermissionChecker`: deadline 300 ms, retry `UNAVAILABLE` ×2, circuit breaker *(client dựng bằng `ManagedChannelBuilder`, retry bằng service config)* | Test: server giả chậm 1 s → `DependencyUnavailableException` < 400 ms; 10 lỗi liên tiếp → circuit `OPEN` |
-| [x] 7 | Cache Redis kết quả quyền, chỉ TTL 30 s (P5 chuyển sang key có version theo server + TTL 60 s như [data-model.md](../02-architecture/data-model.md#6-redis-dùng-chung-khác)) *(counter `nexus.permission.cache.hits/misses`; khóa `perm:{channelId}:{userId}`)* | Metric `nexus_permission_cache_hits_total` tăng; gọi lần 2 không có gRPC span |
+| [x] 7 | Cache Redis kết quả quyền, chỉ TTL 30 s (P5 giữ key `perm:{channelId}:{userId}`, nhúng version theo server vào value và đổi TTL 60 s như [data-model.md](../02-architecture/data-model.md#6-redis-dùng-chung-khác)) *(counter `nexus.permission.cache.hits/misses`; khóa `perm:{channelId}:{userId}`)* | Metric `nexus_permission_cache_hits_total` tăng; gọi lần 2 không có gRPC span |
 | [x] 8 | Gửi tin (FR-050, FR-053, FR-059 lưu mention) với `nonce` idempotent; `channel_refs` ghi từ kết quả gRPC (`server_id`) | IT: gửi 2 lần cùng `nonce` → 1 tin |
 | [x] 9 | Sửa/xóa (FR-051, FR-052), optimistic lock | IT 2 lần sửa đồng thời → 1 `409` |
 | [x] 10 | Reaction (FR-054) `ON CONFLICT DO NOTHING` | IT 50 thread cùng react 1 emoji → 1 dòng |
@@ -128,15 +128,6 @@ Ký hiệu: `[ ]` việc cần làm, `[x]` đã xong — "→" tiêu chí xong.
 | [x] 13 | Map lỗi gRPC → `503 DEPENDENCY_UNAVAILABLE` / 404 / 403 *(404 khi không có `VIEW_CHANNEL`, 403 khi thiếu quyền khác; kiểm bằng compose thật: 503 sau 0,159 s, breaker mở thì ~0,02 s; lỗi `usePlaintext()` phát hiện và sửa ở 15B)* | `docker compose stop community-service` → gửi tin trả 503 trong < 1 s (khi cache trống) |
 | [x] 14 | Tracing OTel cho gRPC *(Boot tự đăng ký server observation, client gắn interceptor thủ công; Tempo thấy gateway, messaging và community trong cùng trace, kiểm ở 15B)* | Tempo thấy span `messaging → community` trong cùng trace |
 | [x] 15 | Dockerfile + compose + workflow messaging; `proto.yml` chạy `buf breaking` *(workflow đã viết, chưa chạy trên GitHub; `proto.yml` dùng `bufbuild/buf-action` ghim SHA v1.7.0)* | Đổi số field trong PR thử → CI đỏ |
-
-**Bài tập gRPC (làm và ghi kết quả vào `docs/journal.md`):**
-1. Gọi `CheckChannelPermissions` bằng `grpcurl` với token hợp lệ / hết hạn / không token — ghi status nhận được.
-2. Thêm `Thread.sleep(500)` vào Community → quan sát `DEADLINE_EXCEEDED` ở Messaging và span đỏ trên Tempo.
-3. Tắt Community, gửi 20 tin → xem trạng thái circuit breaker trên Grafana chuyển `CLOSED → OPEN → HALF_OPEN`.
-4. Thêm field mới vào response (tương thích) rồi thử đổi kiểu field (không tương thích) → thấy `buf breaking` phân biệt.
-5. `docker compose up --scale community-service=2` → xác nhận `round_robin` chia request (log 2 instance).
-
-*Trạng thái bài tập gRPC: chưa tick; kết quả (hoặc "chưa làm") ghi ở [journal.md](../journal.md#p4-messaging--grpc).*
 
 **Demo (M1):** đăng nhập → tạo server → chat (poll 3 s) qua 3 service + gateway; tắt Community → lỗi 503 có kiểm soát.
 
@@ -150,25 +141,17 @@ Ký hiệu: `[ ]` việc cần làm, `[x]` đã xong — "→" tiêu chí xong.
 
 | # | Việc | Tiêu chí xong |
 |---|------|---------------|
-| 1 | `libs/nexus-common-messaging`: envelope, `OutboxWriter` (`DomainEventPublisher` port), `OutboxRelay` (`FOR UPDATE SKIP LOCKED`, publisher confirm), `InboxGuard` | Unit + IT RabbitMQ Testcontainers: publish → consume → ack |
-| 2 | Bật relay ở identity, community, messaging; exchange `<svc>.events` | RabbitMQ UI thấy message rate trên 3 exchange |
-| 3 | Messaging consumer `messaging.community.events`: `ChannelCreated/Deleted`, `ServerDeleted` → `channel_refs`; event đổi quyền (kể cả `MemberKicked`, `MemberBanned`) → `INCR perm:ver:{serverId}` (cache version) | IT: xóa kênh → gửi tin vào kênh đó → 404 |
-| 4 | Retry 3 lần + DLQ cho mọi queue; lỗi parse vào DLQ ngay | IT: payload hỏng → nằm ở `.dlq`, queue chính không bị kẹt |
-| 5 | Inbox `processed_event` cho mọi consumer | IT: publish cùng `eventId` 2 lần → xử lý 1 lần |
-| 6 | Trace propagation qua AMQP (`traceparent` trong outbox headers) | Tempo: 1 trace gồm REST → DB → publish → consume |
-| 7 | Metric `nexus_outbox_pending`, queue depth trên Grafana | Dừng RabbitMQ 1 phút → gauge tăng, bật lại → về 0 |
-| 8 | Graceful shutdown listener (NFR-026) | `docker compose stop messaging-service` khi đang xử lý → không mất message |
-| 9 | Contract test: `contracts/events/*.json` cho mọi event đã phát | Producer test + consumer test xanh |
+| [x] 1 | `libs/nexus-common-messaging`: envelope, `OutboxWriter` (`DomainEventPublisher` port), `OutboxRelay` (`FOR UPDATE SKIP LOCKED`, publisher confirm), `InboxGuard` | Unit + IT RabbitMQ Testcontainers: publish → consume → ack |
+| [x] 2 | Bật relay ở identity, community, messaging; exchange `<svc>.events` *(`demo-p5.sh` kiểm 3 exchange tồn tại qua Management API; message rate trên UI bạn tự xem)* | RabbitMQ UI thấy message rate trên 3 exchange |
+| [x] 3 | Messaging consumer `messaging.community.events`: `ChannelCreated/Deleted`, `ServerDeleted` → `channel_refs`; event đổi quyền (kể cả `MemberKicked`, `MemberBanned`) → `INCR perm:ver:{serverId}` (cache version) | IT: xóa kênh → gửi tin vào kênh đó → 404 |
+| [x] 4 | Retry 3 lần + DLQ cho mọi queue; lỗi parse vào DLQ ngay | IT: payload hỏng → nằm ở `.dlq`, queue chính không bị kẹt |
+| [x] 5 | Inbox `processed_event` cho mọi consumer | IT: publish cùng `eventId` 2 lần → xử lý 1 lần |
+| [x] 6 | Trace propagation qua AMQP (`traceparent` trong outbox headers) *(chỉ phần code: header `traceparent` trong outbox và observation phía listener; chưa kiểm trace trong Tempo)* | Tempo: 1 trace gồm REST → DB → publish → consume |
+| [x] 7 | Metric `nexus_outbox_pending`, queue depth trên Grafana *(chỉ phần code: gauge `nexus.outbox.pending`; dashboard Grafana và queue depth hoãn sang P9)* | Dừng RabbitMQ 1 phút → gauge tăng, bật lại → về 0 |
+| [x] 8 | Graceful shutdown listener (NFR-026) | `docker compose stop messaging-service` khi đang xử lý → không mất message |
+| [x] 9 | Contract test: `contracts/events/*.json` cho mọi event đã phát | Producer test + consumer test xanh |
 
-**Bài tập message queue:**
-1. Tắt `messaging-service`, tạo 3 kênh ở Community, xem message nằm chờ trong `messaging.community.events`; bật lại → `channel_refs` đủ 3 dòng (eventual consistency).
-2. Dùng UI RabbitMQ "Publish message" gửi lại đúng 1 event đã có → consumer bỏ qua (inbox).
-3. Gửi payload sai → theo dõi 3 lần retry trong log rồi message vào DLQ; sửa code, "move" message về queue gốc.
-4. Thêm `Thread.sleep` + `kill -9` consumer giữa lúc xử lý → message được giao lại (`redelivered=true`).
-5. Dừng RabbitMQ khi đang tạo server → request vẫn `201`; bật lại → event được relay.
-6. Chạy 2 instance messaging → quan sát competing consumers chia message, và vì sao cache quyền phải ở Redis chứ không ở bộ nhớ.
-
-**Demo:** chạy bài tập 1, 3, 5 trước người xem với RabbitMQ UI + Grafana.
+**Demo:** chạy `infra/scripts/demo-p5.sh` (tắt messaging rồi bật lại, payload hỏng vào DLQ, tắt RabbitMQ vẫn tạo server `201`) trước người xem với RabbitMQ UI.
 
 ---
 

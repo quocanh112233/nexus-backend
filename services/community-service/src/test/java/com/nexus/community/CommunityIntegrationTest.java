@@ -5,8 +5,14 @@ import com.nexus.testsupport.TestJwt;
 import java.util.UUID;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestPropertySource;
 
-// Lớp cha cho IT của community: Postgres dùng chung và một máy chủ JWKS giả cho cả JVM
+// Lớp cha IT community: Postgres, JWKS giả dùng chung cả JVM, relay và listener AMQP mặc định tắt
+@TestPropertySource(
+    properties = {
+      "nexus.messaging.relay.enabled=false",
+      "spring.rabbitmq.listener.simple.auto-startup=false"
+    })
 public abstract class CommunityIntegrationTest extends PostgresIntegrationTest {
 
   protected static final TestJwt JWT = TestJwt.create();

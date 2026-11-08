@@ -288,5 +288,19 @@ class SendMessageUseCaseTest {
     public void upsertServerChannel(ChannelId channelId, UUID serverId) {
       saved.putIfAbsent(channelId, serverId);
     }
+
+    // Không dùng trong test này
+    @Override
+    public void tombstoneChannel(ChannelId channelId, UUID serverId, Instant at) {}
+
+    // Không dùng trong test này
+    @Override
+    public void tombstoneServer(UUID serverId, Instant at) {}
+
+    // Luôn trả chưa xóa
+    @Override
+    public boolean isDeleted(ChannelId channelId) {
+      return false;
+    }
   }
 }

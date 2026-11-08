@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -38,6 +39,9 @@ class CachingChannelPermissionCheckerIT extends MessagingIntegrationTest {
   private static final Duration TTL = Duration.ofSeconds(30);
 
   @Autowired private StringRedisTemplate redis;
+
+  @Value("${app.cache.permission-ttl}")
+  private Duration configuredTtl;
 
   private final FakeChecker fake = new FakeChecker();
   private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
@@ -167,13 +171,13 @@ class CachingChannelPermissionCheckerIT extends MessagingIntegrationTest {
     cache.check(user, channel);
     cache.check(user, channel);
 
-    assertThat(redis.opsForValue().get(key)).isEqualTo(fake.access.serverId() + "|1");
+    assertThat(redis.opsForValue().get(key)).isEqualTo(fake.access.serverId() + "|1|0");
     assertThat(fake.calls.get()).isEqualTo(1);
   }
 
   // Kịch bản: bitmask ngoài khoảng hợp lệ coi như miss và được ghi đè
-  // Input: entry "{serverId}|-1" rồi "{serverId}|64" (tối đa hợp lệ 63), mỗi lần một check
-  // Output: mỗi lần delegate bị gọi 1 lần, entry bị ghi đè thành "|1", misses=2, hits=0
+  // Input: entry "{serverId}|-1|0" rồi "{serverId}|64|0" (tối đa hợp lệ 63), mỗi lần một check
+  // Output: mỗi lần delegate bị gọi 1 lần, entry bị ghi đè thành "|1|0", misses=2, hits=0
   @Test
   void outOfRangeBitmaskIsTreatedAsMissAndOverwritten() {
     fake.access = new ChannelAccess(UUID.randomUUID(), EnumSet.of(ChannelPermission.VIEW_CHANNEL));
@@ -181,12 +185,12 @@ class CachingChannelPermissionCheckerIT extends MessagingIntegrationTest {
     int calls = 0;
 
     for (String bad : new String[] {"-1", "64"}) {
-      redis.opsForValue().set(key, fake.access.serverId() + "|" + bad);
+      redis.opsForValue().set(key, fake.access.serverId() + "|" + bad + "|0");
 
       assertThat(cache.check(user, channel)).isEqualTo(fake.access);
 
       assertThat(fake.calls.get()).isEqualTo(++calls);
-      assertThat(redis.opsForValue().get(key)).isEqualTo(fake.access.serverId() + "|1");
+      assertThat(redis.opsForValue().get(key)).isEqualTo(fake.access.serverId() + "|1|0");
     }
     assertThat(count("nexus.permission.cache.misses")).isEqualTo(2.0);
     assertThat(count("nexus.permission.cache.hits")).isZero();
@@ -211,6 +215,68 @@ class CachingChannelPermissionCheckerIT extends MessagingIntegrationTest {
 
     assertThat(fake.calls.get()).isEqualTo(1);
     assertThat(count("nexus.permission.cache.misses")).isEqualTo(1.0);
+  }
+
+  // Kịch bản: bump phiên bản quyền của server vô hiệu entry đã cache
+  // Input: check hai lần, INCR perm:ver:{serverId}, check lần ba
+  // Output: sau hai call delegate 1 lần, sau INCR delegate 2 lần, hits=1, misses=2
+  @Test
+  void bumpInvalidatesCachedEntry() {
+    fake.access = new ChannelAccess(UUID.randomUUID(), EnumSet.of(ChannelPermission.VIEW_CHANNEL));
+
+    cache.check(user, channel);
+    cache.check(user, channel);
+    assertThat(fake.calls.get()).isEqualTo(1);
+    redis.opsForValue().increment("perm:ver:" + fake.access.serverId());
+    cache.check(user, channel);
+
+    assertThat(fake.calls.get()).isEqualTo(2);
+    assertThat(count("nexus.permission.cache.hits")).isEqualTo(1.0);
+    assertThat(count("nexus.permission.cache.misses")).isEqualTo(2.0);
+  }
+
+  // Kịch bản: entry nhúng serverId, bitmask và phiên bản
+  // Input: một call check rồi đọc giá trị khóa perm:{channel}:{user}
+  // Output: giá trị khớp "^[0-9a-f-]{36}\|\d+\|\d+$" và bắt đầu bằng serverId
+  @Test
+  void entryEmbedsServerIdBitsAndVersion() {
+    fake.access = new ChannelAccess(UUID.randomUUID(), EnumSet.of(ChannelPermission.VIEW_CHANNEL));
+
+    cache.check(user, channel);
+
+    assertThat(redis.opsForValue().get("perm:" + channel.value() + ":" + user.value()))
+        .matches("^[0-9a-f-]{36}\\|\\d+\\|\\d+$")
+        .startsWith(fake.access.serverId() + "|");
+  }
+
+  // Kịch bản: entry định dạng P4 (thiếu phiên bản) coi như miss
+  // Input: ghi tay "{serverId}|3" vào khóa rồi một call check
+  // Output: delegate được gọi 1 lần, entry bị ghi đè thành "|1|0"
+  @Test
+  void p4FormatEntryIsTreatedAsMiss() {
+    fake.access = new ChannelAccess(UUID.randomUUID(), EnumSet.of(ChannelPermission.VIEW_CHANNEL));
+    String key = "perm:" + channel.value() + ":" + user.value();
+    redis.opsForValue().set(key, fake.access.serverId() + "|3");
+
+    cache.check(user, channel);
+
+    assertThat(fake.calls.get()).isEqualTo(1);
+    assertThat(redis.opsForValue().get(key)).isEqualTo(fake.access.serverId() + "|1|0");
+  }
+
+  // Kịch bản: TTL cấu hình mặc định của app là 60 s
+  // Input: cache dựng với app.cache.permission-ttl, một call check
+  // Output: TTL còn lại của khóa trong khoảng (55, 60] giây
+  @Test
+  void ttlDefaultsTo60Seconds() {
+    fake.access = new ChannelAccess(UUID.randomUUID(), EnumSet.of(ChannelPermission.VIEW_CHANNEL));
+    cache = new CachingChannelPermissionChecker(fake, redis, meters, configuredTtl);
+
+    cache.check(user, channel);
+
+    assertThat(redis.getExpire("perm:" + channel.value() + ":" + user.value()))
+        .isLessThanOrEqualTo(60)
+        .isGreaterThan(55);
   }
 
   // Delegate giả đếm call, trả access hoặc ném failure đã cấu hình

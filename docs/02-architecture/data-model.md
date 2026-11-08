@@ -105,9 +105,8 @@ Thao tác thêm/xóa session + đổi trạng thái chạy trong **một Lua scr
 
 | Key | Chủ sở hữu | Nội dung | TTL |
 |-----|-----------|---------|-----|
-| `perm:{channelId}:{userId}` | messaging | **P4:** bitmask quyền kênh (cache-aside, fail-open khi Redis lỗi); metric `nexus.permission.cache.hits` / `nexus.permission.cache.misses` | 30 s |
-| `perm:ver:{serverId}` | messaging | Số phiên bản quyền của server, `INCR` khi có event đổi quyền | không |
-| `perm:{serverId}:{ver}:{channelId}:{userId}` | messaging | **P5** thay khóa P4 ở trên; bitset quyền kênh | 60 s |
+| `perm:{channelId}:{userId}` | messaging | Bitmask quyền kênh dạng `serverId\|bits\|ver` (cache-aside, fail-open khi Redis lỗi); `ver` là `perm:ver:{serverId}` lúc ghi, đọc lệch version thì coi là miss; metric `nexus.permission.cache.hits` / `nexus.permission.cache.misses` | 60 s |
+| `perm:ver:{serverId}` | messaging | Số phiên bản quyền của server, `INCR` (trong transaction xử lý event và lại sau commit) khi có event đổi quyền, kick, ban, xóa kênh/server | không |
 | `rl:{route}:{key}` | api-gateway | Token bucket | theo cấu hình |
 
 Mỗi service dùng **prefix riêng** và (khuyến nghị) Redis ACL user riêng — áp dụng tinh thần "dữ liệu thuộc một service" cho Redis.

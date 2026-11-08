@@ -72,6 +72,16 @@ public class OutboxEventJpaEntity implements Persistable<UUID> {
     this.createdAt = createdAt;
   }
 
+  // Ghi nhận đã publish thành công lúc at
+  public void markPublished(Instant at) {
+    this.publishedAt = at;
+  }
+
+  // Ghi nhận một lần publish lỗi
+  public void recordFailure() {
+    this.attempts++;
+  }
+
   // Trả id của dòng outbox
   @Override
   public UUID getId() {

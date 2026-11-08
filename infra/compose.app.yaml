@@ -1,5 +1,6 @@
 services:
   identity-service:
+    stop_grace_period: 40s
     image: ghcr.io/quocanh112233/nexus-identity-service:${TAG:-latest}
     build:
       context: ..
@@ -20,15 +21,20 @@ services:
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
       CLOUDINARY_UPLOAD_PRESET: ${CLOUDINARY_UPLOAD_PRESET_AVATAR:-}
       CLOUDINARY_FOLDER_ROOT: ${CLOUDINARY_FOLDER_ROOT:-nexus-dev}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_ADMIN_USER:?}
+      RABBITMQ_PASSWORD: ${RABBITMQ_ADMIN_PASSWORD:?}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_ENDPOINT:-}
     secrets:
       - jwt_private_key
     depends_on:
       postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
     deploy:
       resources:
         limits: { memory: 512m }
   community-service:
+    stop_grace_period: 40s
     image: ghcr.io/quocanh112233/nexus-community-service:${TAG:-latest}
     build:
       context: ..
@@ -39,13 +45,18 @@ services:
       DB_USER: community_svc
       DB_PASSWORD: ${COMMUNITY_DB_PASSWORD:?}
       JWKS_URI: http://identity-service:8081/.well-known/jwks.json
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_ADMIN_USER:?}
+      RABBITMQ_PASSWORD: ${RABBITMQ_ADMIN_PASSWORD:?}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_ENDPOINT:-}
     depends_on:
       postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
     deploy:
       resources:
         limits: { memory: 512m }
   messaging-service:
+    stop_grace_period: 40s
     image: ghcr.io/quocanh112233/nexus-messaging-service:${TAG:-latest}
     build:
       context: ..
@@ -64,9 +75,13 @@ services:
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
       CLOUDINARY_UPLOAD_PRESET_ATTACHMENT: ${CLOUDINARY_UPLOAD_PRESET_ATTACHMENT:-}
       CLOUDINARY_FOLDER_ROOT: ${CLOUDINARY_FOLDER_ROOT:-nexus-dev}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_ADMIN_USER:?}
+      RABBITMQ_PASSWORD: ${RABBITMQ_ADMIN_PASSWORD:?}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_ENDPOINT:-}
     depends_on:
       postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
       redis: { condition: service_healthy }
     deploy:
       resources:

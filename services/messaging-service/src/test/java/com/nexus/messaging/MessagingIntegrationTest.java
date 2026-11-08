@@ -5,9 +5,15 @@ import com.nexus.testsupport.TestJwt;
 import java.util.UUID;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestPropertySource;
 import org.testcontainers.containers.GenericContainer;
 
-// Lớp cha cho IT của messaging: Postgres, Redis dùng chung và một máy chủ JWKS giả cho cả JVM
+// Lớp cha IT messaging: Postgres, Redis, JWKS giả dùng chung cả JVM, relay và AMQP mặc định tắt
+@TestPropertySource(
+    properties = {
+      "nexus.messaging.relay.enabled=false",
+      "spring.rabbitmq.listener.simple.auto-startup=false"
+    })
 public abstract class MessagingIntegrationTest extends PostgresIntegrationTest {
 
   protected static final TestJwt JWT = TestJwt.create();

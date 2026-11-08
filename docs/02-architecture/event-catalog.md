@@ -26,13 +26,11 @@ File này là danh mục chuẩn của mọi integration event: tên, producer, 
   "producer": "messaging-service",
   "aggregateType": "Message",
   "aggregateId": "0192f0c4-7a1e-7c3d-9a1b-000000000001",
-  "aggregateVersion": 1,
-  "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
   "payload": { }
 }
 ```
 
-`eventId` cũng đặt vào AMQP property `message_id`; `traceparent` cũng đặt vào header AMQP để OpenTelemetry nối trace.
+`eventId` cũng đặt vào AMQP property `message_id`. `traceparent` (W3C) không nằm trong body mà đi bằng header AMQP `traceparent` để OpenTelemetry nối trace; envelope cũng không có `aggregateVersion` (bảng outbox không có cột này).
 
 ## 2. identity.events
 
@@ -71,9 +69,9 @@ Ghi chú: `permissions` là chuỗi số thập phân của bitset (tránh mất
 
 | Event | Routing key | Consumer | Payload chính |
 |-------|-------------|----------|---------------|
-| `MessageCreated` | `message.created` | notification, realtime-gateway | `messageId, channelId, serverId?, authorId, content, replyToId?, attachments[{publicId,url,contentType,bytes}], mentionUserIds[], createdAt, nonce` |
-| `MessageEdited` | `message.edited` | realtime-gateway | `messageId, channelId, serverId?, content, mentionUserIds[], editedAt, version` |
-| `MessageDeleted` | `message.deleted` | realtime-gateway | `messageId, channelId, serverId?, deletedBy` |
+| `MessageCreated` | `message.created` | notification, realtime-gateway | `messageId, channelId, serverId, authorId, content, replyToId?, attachments[{publicId,url,contentType,bytes}], mentionUserIds[], createdAt, nonce` |
+| `MessageEdited` | `message.edited` | realtime-gateway | `messageId, channelId, serverId, content, mentionUserIds[], editedAt, version` |
+| `MessageDeleted` | `message.deleted` | realtime-gateway | `messageId, channelId, serverId, deletedBy` |
 | `ReactionAdded` | `reaction.added` | realtime-gateway | `messageId, channelId, userId, emoji` |
 | `ReactionRemoved` | `reaction.removed` | realtime-gateway | `messageId, channelId, userId, emoji` |
 | `FriendRequestSent` | `friend-request.sent` | realtime-gateway | `requestId, requesterId, addresseeId` |
@@ -125,4 +123,4 @@ Ai khai báo gì: **producer** khai báo exchange của mình; **consumer** khai
 
 ## 9. Kiểm tra hợp đồng
 
-Mỗi event có file mẫu `contracts/events/<producer>/<EventType>.v<version>.json`. Producer test: serialize event → so khớp cấu trúc với file mẫu. Consumer test: deserialize file mẫu → không lỗi, map đúng. Xem [testing-strategy.md](../05-plan/testing-strategy.md).
+Mỗi event có file mẫu `contracts/events/<EventType>.json` (chỉ phần `payload`). Producer test: serialize event → so khớp cấu trúc với file mẫu. Consumer test: deserialize file mẫu → không lỗi, map đúng. Xem [testing-strategy.md](../05-plan/testing-strategy.md).

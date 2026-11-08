@@ -1,0 +1,12 @@
+{
+  "messageId": "0192f0c4-7a1e-7c3d-9a1b-000000000006",
+  "channelId": "0192f0c4-7a1e-7c3d-9a1b-000000000003",
+  "serverId": "0192f0c4-7a1e-7c3d-9a1b-000000000001",
+  "authorId": "0192f0c4-7a1e-7c3d-9a1b-000000000002",
+  "content": "hi",
+  "replyToId": null,
+  "attachments": [{"publicId": "pid", "url": "https://x/y.png", "contentType": "image/png", "bytes": 10}],
+  "mentionUserIds": ["0192f0c4-7a1e-7c3d-9a1b-000000000002"],
+  "createdAt": "2026-11-07T10:00:00Z",
+  "nonce": null
+}

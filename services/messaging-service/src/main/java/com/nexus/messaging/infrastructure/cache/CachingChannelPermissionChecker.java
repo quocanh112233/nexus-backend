@@ -15,7 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
-// Bọc ChannelPermissionChecker bằng cache Redis cache-aside, Redis lỗi thì gọi thẳng delegate
+// Cache Redis cache-aside có version theo server bọc ChannelPermissionChecker, lỗi thì gọi delegate
 public class CachingChannelPermissionChecker implements ChannelPermissionChecker {
 
   private static final Logger LOG = LoggerFactory.getLogger(CachingChannelPermissionChecker.class);
@@ -55,7 +55,7 @@ public class CachingChannelPermissionChecker implements ChannelPermissionChecker
     return access;
   }
 
-  // Đọc entry, trả null nếu thiếu, hỏng định dạng hoặc Redis lỗi
+  // Đọc entry, trả null nếu thiếu, hỏng định dạng, lệch phiên bản hoặc Redis lỗi
   private ChannelAccess read(String key) {
     try {
       String value = redis.opsForValue().get(key);
@@ -66,31 +66,45 @@ public class CachingChannelPermissionChecker implements ChannelPermissionChecker
     }
   }
 
-  // Ghi entry kèm TTL, Redis lỗi thì chỉ log
+  // Ghi entry kèm phiên bản hiện tại và TTL, Redis lỗi thì chỉ log
   private void write(String key, ChannelAccess access) {
     try {
-      redis.opsForValue().set(key, encode(access), ttl);
+      // ponytail: cửa sổ stale cực nhỏ giữa delegate trả và đọc version, tối đa 60 s; cần thì Lua
+      long version = version(access.serverId());
+      redis.opsForValue().set(key, encode(access, version), ttl);
     } catch (RuntimeException e) {
       LOG.warn("Redis permission cache write failed: {}", e.toString());
     }
   }
 
-  // Mã hóa thành "{serverId}|{bitmask theo ordinal}"
-  private static String encode(ChannelAccess access) {
+  // Phiên bản quyền hiện tại của server, thiếu khóa thì là 0
+  private long version(UUID serverId) {
+    String value = redis.opsForValue().get("perm:ver:" + serverId);
+    return value == null ? 0 : Long.parseLong(value);
+  }
+
+  // Mã hóa thành "{serverId}|{bitmask theo ordinal}|{phiên bản}"
+  private static String encode(ChannelAccess access, long version) {
     int bits = 0;
     for (ChannelPermission p : access.granted()) {
       bits |= 1 << p.ordinal();
     }
-    return access.serverId() + "|" + bits;
+    return access.serverId() + "|" + bits + "|" + version;
   }
 
-  // Giải mã entry, trả null nếu sai định dạng hoặc bitmask ngoài khoảng hợp lệ
-  private static ChannelAccess decode(String value) {
+  // Giải mã entry, trả null nếu sai định dạng, bitmask ngoài khoảng hợp lệ hoặc lệch phiên bản
+  private ChannelAccess decode(String value) {
     try {
-      int sep = value.indexOf('|');
-      UUID serverId = UUID.fromString(value.substring(0, sep));
-      int bits = Integer.parseInt(value.substring(sep + 1));
+      String[] parts = value.split("\\|", -1);
+      if (parts.length != 3) {
+        return null;
+      }
+      UUID serverId = UUID.fromString(parts[0]);
+      int bits = Integer.parseInt(parts[1]);
       if (bits < 0 || bits >= (1 << PERMISSIONS.length)) {
+        return null;
+      }
+      if (Long.parseLong(parts[2]) != version(serverId)) {
         return null;
       }
       Set<ChannelPermission> granted = EnumSet.noneOf(ChannelPermission.class);

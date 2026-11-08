@@ -35,15 +35,9 @@
 - Xóa mềm xóa dòng attachment nên file Cloudinary thành mồ côi.
 - Gọi HTTP tới Cloudinary nằm trong transaction gửi tin (tối đa 5 file x 5 s giữ một kết nối DB).
 
-### Bài tập gRPC
+### Kết quả tắt Community
 
-Theo R15, bài 1, 2, 4, 5 cần công cụ/sửa code tạm không có sẵn (không có `grpcurl`, không sửa code Java ở bước này): **chưa làm, bạn tự chạy**. Chỉ bài 3 và kiểm Tempo được thử ở 15B.
-
-1. `grpcurl` token hợp lệ / hết hạn / không token: chưa làm.
-2. `Thread.sleep(500)` tạm ở Community, `DEADLINE_EXCEEDED` và span đỏ: chưa làm.
-3. Tắt Community, gửi 1 + 20 tin: cả 21 lần 503 `DEPENDENCY_UNAVAILABLE`; lần gửi đầu và 16 lần tiếp theo (17 lần) chậm 0,15 đến 0,18 s (gọi gRPC thất bại rồi retry), 4 lần cuối trong chuỗi 21 lần còn 0,017 đến 0,022 s (breaker `OPEN`, không gọi gRPC). Chưa xem `CLOSED → OPEN → HALF_OPEN` trên Grafana (`resilience4j_circuitbreaker_state`), bạn tự xem; bật lại Community và chờ ~12 s thì gửi lại được 201 (0,29 s).
-4. `buf breaking` tương thích vs không tương thích: chưa làm (workflow `proto.yml` đã viết, chưa chạy trên GitHub).
-5. `--scale community-service=2` và `round_robin`: chưa làm.
+Tắt Community, gửi 1 + 20 tin: cả 21 lần 503 `DEPENDENCY_UNAVAILABLE`; lần gửi đầu và 16 lần tiếp theo (17 lần) chậm 0,15 đến 0,18 s (gọi gRPC thất bại rồi retry), 4 lần cuối trong chuỗi 21 lần còn 0,017 đến 0,022 s (breaker `OPEN`, không gọi gRPC). Chưa xem `CLOSED → OPEN → HALF_OPEN` trên Grafana (`resilience4j_circuitbreaker_state`), bạn tự xem; bật lại Community và chờ ~12 s thì gửi lại được 201 (0,29 s).
 
 ### Kết quả demo, Tempo và breaker
 
@@ -56,6 +50,45 @@ Chạy thật bằng `docker compose -p nexus-p4demo --profile observability` (p
 - **Tempo** (trên HEAD đã sửa): trace `63c371912a4064322ec9ca84ef9259d1` của lần gửi tin bước 4 có span của `api-gateway`, `messaging-service` và `community-service`; span `PermissionService/CheckChannelPermissions` CLIENT (messaging) là cha của span SERVER (community). Đạt.
 - Bài 1, 2, 4, 5: chưa làm, bạn tự chạy. Gợi ý: (1) `grpcurl -plaintext -H "authorization: Bearer <jwt>" localhost:9092 nexus.community.v1.PermissionService/CheckChannelPermissions` (cổng 9092 chưa publish ra host, thêm tạm vào compose hoặc chạy từ container); (2) thêm tạm `Thread.sleep(500)` vào `PermissionGrpcService`; (4) mở PR thử đổi số field trong `proto/`; (5) `docker compose up -d --scale community-service=2`.
 - Lưu ý CI (dự kiến, workflow chưa chạy trên GitHub): `proto.yml` kiểm base của PR có `proto/` không và bỏ qua `buf breaking` khi chưa có (PR đầu tiên thêm `proto/`); nhãn `buf skip breaking` vẫn bỏ qua được breaking, nhưng gắn nhãn xong phải push thêm một commit mới thì job mới chạy lại với nhãn.
+
+## P5 Message queue
+
+- **Outbox + `FOR UPDATE SKIP LOCKED`**: service ghi event vào `outbox_event` cùng transaction với nghiệp vụ, relay (batch 100, mỗi 500 ms) khóa các dòng chưa gửi bằng `SKIP LOCKED` nên nhiều instance relay không giẫm nhau; publish theo thứ tự `id`, một dòng lỗi thì dừng batch để giữ thứ tự. Broker chết không làm request lỗi, chỉ làm dòng outbox chờ.
+- **Confirm khác ack**: publisher confirm (`publisher-confirm-type: correlated`, `simple` không bật confirm) cho relay biết broker đã nhận và route, rồi mới điền `published_at`; ack là việc của consumer báo broker đã xử lý xong. Confirm quá 5 s hoặc crash giữa chừng thì gửi lại, nên giao nhận là at-least-once, trùng được loại ở inbox.
+- **Inbox cùng transaction**: `InboxGuard` ghi `processed_event` và áp nghiệp vụ trong một transaction, ack sau commit. Event trùng `eventId` bị bỏ vì khóa chính; rollback thì cả hai cùng mất và broker giao lại.
+- **Retry phân loại lỗi**: lỗi parse, `IllegalArgumentException`, `AmqpRejectAndDontRequeueException` vào DLQ ngay vì thử lại không đổi kết quả; lỗi còn lại thử 3 lần tổng cộng (cách nhau 1 s, 2 s) rồi reject không requeue vào `<queue>.dlq`. Nhờ vậy một message hỏng không chặn queue và lỗi tạm thời (DB, Redis) vẫn tự lành.
+- **Version nhúng trong value cache**: cache quyền giữ khóa `perm:{channelId}:{userId}`, value `serverId|bits|ver`; mỗi lần đọc so `ver` với `perm:ver:{serverId}`, lệch là miss. Event đổi quyền chỉ cần `INCR` một khóa theo server thay vì xóa từng key. Cửa sổ stale còn lại: từ lúc đổi quyền ở Community tới lúc messaging xử lý event (độ trễ queue) và request chen giữa `INCR` với commit; TTL 60 s chặn phần rò còn lại.
+- **`ChannelDeleted` tới trước `ChannelCreated`**: consumer ghi tombstone (`channel_refs.deleted_at`) kể cả khi chưa có dòng kênh, nên `ChannelCreated` đến sau không làm kênh sống lại và gửi tin vào kênh đó vẫn 404.
+
+### Khác biệt code và event-catalog (phát hiện bởi contract test)
+
+- Envelope không có `aggregateVersion` (bảng outbox không có cột) và không có `traceparent` trong body: trace đi bằng header AMQP `traceparent`. Catalog đã sửa.
+- Đường dẫn mẫu là `contracts/events/<EventType>.json` (chỉ `payload`), không phải `<producer>/<EventType>.v<n>.json`. Catalog §9 đã sửa.
+- `MessageCreated/Edited/Deleted.serverId` luôn có giá trị trong code (null sẽ NPE), catalog cũ ghi `serverId?`; đã bỏ dấu `?`. DM chưa phát các event này.
+- Tên khóa của cả 26 event khớp catalog; hai bài thử đổi tên khóa (`kickedBy`, `publicId`) làm đúng một contract test đỏ.
+- `identity.events` chỉ xuất hiện trên broker sau lần relay publish đầu tiên (identity không có listener nên không mở kết nối lúc khởi động); `community.events` và `messaging.events` có ngay vì messaging khai báo.
+
+### Rủi ro đã biết (P5)
+
+- Dòng outbox lỗi vĩnh viễn (payload không serialize được, exchange bị xóa) chặn relay của service đó: chưa có ngưỡng bỏ qua, `attempts` chỉ tăng; chỉ gauge `nexus.outbox.pending` cho thấy.
+- Event không có queue nào bind routing key đó bị broker bỏ (publish thành công nhưng không route), không báo lỗi.
+- Confirm timeout hoặc crash sau khi broker đã nhận có thể publish hai lần (at-least-once); inbox ở consumer loại bản trùng, nhưng consumer ngoài repo phải tự idempotent.
+- Cả 3 service dùng chung user admin RabbitMQ; user riêng theo `security.md` làm ở P9.
+- Cửa sổ stale quyền còn nhỏ nhưng có thật (xem trên); mỗi event community được xử lý bump `perm:ver` hai lần có chủ đích (một lần trong transaction để Redis lỗi thì rollback và giao lại, một lần sau commit để cache không giữ version cũ), vô hại.
+- Dashboard Grafana và queue depth hoãn sang P9; chỉ có gauge `nexus.outbox.pending`.
+- Retry là 3 lần tổng cộng (cách nhau 1 s, 2 s), không phải 4 như dãy 1 s, 2 s, 4 s ghi ở spec cũ.
+- `spring.rabbitmq.publisher-confirm-type` phải là `correlated`; để `simple` thì không có confirm và relay đánh dấu đã gửi mà chưa chắc broker nhận.
+- Chưa kiểm trace REST, outbox, consume trong Tempo (không bật profile observability ở lần đóng phase này).
+
+### Kết quả demo P5
+
+`infra/scripts/demo-p5.sh` chạy trên project compose cô lập (`docker compose -p nexus-p5demo`, `POSTGRES_PORT=55432`, `REDIS_PORT=56379`), exit 0, 3 dòng `PASS`:
+
+1. Tắt messaging-service, tạo 3 kênh (201), queue `messaging.community.events` giữ ít nhất 3 message; bật lại, `messaging.channel_refs` đủ 3 dòng. PASS.
+2. Publish payload hỏng (`{khong-phai-json`) vào `community.events` routing key `channel.deleted`: `messaging.community.events.dlq` tăng đúng 1 message, queue chính về 0. Log messaging-service chỉ có một lần `Execution of Rabbit message listener failed` rồi `Retries exhausted ... RejectAndDontRequeueRecoverer`: lỗi parse không đáng retry nên vào DLQ ngay, không có 3 lần retry (đúng thiết kế; 3 lần retry chỉ thấy với lỗi tạm thời, ví dụ DB lỗi). Bước "sửa code rồi move message về queue gốc" chưa làm. PASS.
+3. Dừng rabbitmq, tạo server vẫn 201, dòng `ServerCreated` trong `community.outbox_event` có `published_at` NULL; bật lại thì `published_at` được điền. PASS.
+
+Kiểm tay thêm: Management API thấy exchange `identity.events`, `community.events`, `messaging.events` (type topic) và có `publish_in` > 0 sau khi tạo user, server, kênh, tin; nhắn tin sinh message trên `messaging.events`. Tạo 20 kênh trong lúc `docker compose stop messaging-service` rồi bật lại: `channel_refs` đủ 21/21 (1 kênh mặc định + 20), không mất event (chưa chắc lệnh stop trùng đúng lúc đang xử lý vì 20 request chạy rất nhanh; kịch bản mất message khi đang xử lý được `GracefulShutdownIT` phủ).
 
 ## Bằng chứng observability (Task 13)
 
@@ -81,3 +114,4 @@ Tempo (`/api/datasources/proxy/uid/tempo/api/traces/ff2bcf46833759729884b2e9e196
 - Push nhánh, mở PR, xác nhận CI xanh và image `ghcr.io/quocanh112233/nexus-identity-service` xuất hiện trên GHCR.
 - Image identity-service nặng ~270MB filesystem (415MB theo `docker images`), vượt mục tiêu <250MB; chấp nhận vì base bắt buộc `eclipse-temurin:21-jre-alpine` đã ~212MB, jlink/JRE tùy biến hoãn sang P9.
 - Push nhánh `feat/p2-community`, mở PR, xác nhận CI xanh và các image `ghcr.io/quocanh112233/nexus-community-service`, `ghcr.io/quocanh112233/nexus-api-gateway` xuất hiện trên GHCR; sau đó tự tạo tag `v0.2.0`.
+- P5: sau khi merge, tự tạo tag `v0.5.0`; tự chạy bài message queue 2, 4, 6 và xem message rate trên RabbitMQ UI (`http://127.0.0.1:15672`).

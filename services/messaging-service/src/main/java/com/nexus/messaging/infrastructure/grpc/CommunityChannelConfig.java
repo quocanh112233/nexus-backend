@@ -2,7 +2,9 @@ package com.nexus.messaging.infrastructure.grpc;
 
 import com.nexus.common.grpc.ClientMetadataInterceptor;
 import com.nexus.messaging.application.port.ChannelPermissionChecker;
+import com.nexus.messaging.domain.channel.ChannelRefRepository;
 import com.nexus.messaging.infrastructure.cache.CachingChannelPermissionChecker;
+import com.nexus.messaging.infrastructure.persistence.channel.TombstoneChannelPermissionChecker;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.grpc.ManagedChannel;
@@ -121,17 +123,20 @@ public class CommunityChannelConfig {
     return breaker;
   }
 
-  // Bean ChannelPermissionChecker duy nhất: cache Redis bọc client gRPC tới Community
+  // Bean ChannelPermissionChecker duy nhất: cache Redis bọc tombstone bọc client gRPC tới Community
   @Bean
   ChannelPermissionChecker channelPermissionChecker(
       ManagedChannel communityChannel,
       CircuitBreaker communityCircuitBreaker,
+      ChannelRefRepository channelRefs,
       StringRedisTemplate redis,
       MeterRegistry registry,
       @Value("${app.grpc.community.deadline:300ms}") Duration deadline,
-      @Value("${app.cache.permission-ttl:30s}") Duration ttl) {
+      @Value("${app.cache.permission-ttl:60s}") Duration ttl) {
     return new CachingChannelPermissionChecker(
-        new GrpcChannelPermissionChecker(communityChannel, communityCircuitBreaker, deadline),
+        new TombstoneChannelPermissionChecker(
+            channelRefs,
+            new GrpcChannelPermissionChecker(communityChannel, communityCircuitBreaker, deadline)),
         redis,
         registry,
         ttl);

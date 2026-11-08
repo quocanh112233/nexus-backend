@@ -9,17 +9,26 @@ public class OutboxWriter {
 
   private final OutboxEventDao dao;
   private final Clock clock;
+  private final TraceparentSupplier traceparent;
 
-  // Tạo writer với DAO outbox và đồng hồ hệ thống
+  // Tạo writer không gắn traceparent
   public OutboxWriter(OutboxEventDao dao, Clock clock) {
-    this.dao = dao;
-    this.clock = clock;
+    this(dao, clock, () -> null);
   }
 
-  // Lưu một dòng outbox với id UUIDv7, headers rỗng, chưa publish
+  // Tạo writer với DAO outbox, đồng hồ và nguồn traceparent của span hiện tại
+  public OutboxWriter(OutboxEventDao dao, Clock clock, TraceparentSupplier traceparent) {
+    this.dao = dao;
+    this.clock = clock;
+    this.traceparent = traceparent;
+  }
+
+  // Lưu một dòng outbox với id UUIDv7, headers chứa traceparent nếu có span, chưa publish
   public void append(OutboxMessage message) {
+    String tp = traceparent.current();
+    Map<String, Object> headers = tp == null ? Map.of() : Map.of("traceparent", tp);
     dao.save(
         new OutboxEventJpaEntity(
-            UuidCreator.getTimeOrderedEpoch(), message, Map.of(), clock.instant()));
+            UuidCreator.getTimeOrderedEpoch(), message, headers, clock.instant()));
   }
 }
