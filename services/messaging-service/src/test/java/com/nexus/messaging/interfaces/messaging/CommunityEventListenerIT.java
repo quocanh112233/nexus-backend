@@ -252,6 +252,21 @@ class CommunityEventListenerIT extends MessagingIntegrationTest {
     assertThat(processedCount(eventId)).isEqualTo(1);
   }
 
+  // Kịch bản: eventType lạ và payload không có serverId
+  // Input: eventType Whatever với payload rỗng, routing key member.left
+  // Output: queue và DLQ rỗng, processed_event có 1 dòng
+  @Test
+  void unknownEventTypeWithoutServerIdIsAckedAndIgnored() {
+    UUID eventId = UUID.randomUUID();
+
+    publish("member.left", eventId, "Whatever", Map.of());
+
+    awaitProcessed(eventId);
+    await().atMost(Duration.ofSeconds(2)).until(() -> count(QUEUE) == 0);
+    assertThat(count(QUEUE + ".dlq")).isZero();
+    assertThat(processedCount(eventId)).isEqualTo(1);
+  }
+
   // Payload chứa serverId và channelId
   private static Map<String, Object> ids(UUID server, UUID channel) {
     return Map.of("serverId", server, "channelId", channel);

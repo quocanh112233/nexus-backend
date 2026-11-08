@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -63,6 +64,43 @@ class CommunityEventContractTest {
   void channelEventsRequireChannelId(String eventType) {
     Map<String, Object> payload = new HashMap<>(ContractFixtures.payload(eventType));
     payload.remove("channelId");
+
+    assertThatThrownBy(() -> CommunityEvent.from(envelope(eventType, payload)))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  // Kịch bản: event loại chưa hỗ trợ và không có serverId vẫn được đọc để bỏ qua
+  // Input: eventType Whatever với payload rỗng
+  // Output: from không ném lỗi, serverId và channelId là null
+  @Test
+  void unknownTypeWithoutServerIdIsNotRejected() {
+    CommunityEvent event = CommunityEvent.from(envelope("Whatever", Map.of()));
+
+    assertThat(event.eventType()).isEqualTo("Whatever");
+    assertThat(event.serverId()).isNull();
+    assertThat(event.channelId()).isNull();
+  }
+
+  // Kịch bản: event loại được hỗ trợ thiếu serverId vẫn bị từ chối
+  // Input: fixture đã bỏ serverId theo từng eventType được hỗ trợ
+  // Output: IllegalArgumentException
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "ChannelCreated",
+        "ChannelDeleted",
+        "ChannelPermissionsChanged",
+        "ServerDeleted",
+        "MemberLeft",
+        "MemberKicked",
+        "MemberBanned",
+        "MemberRolesChanged",
+        "RoleUpdated",
+        "RoleDeleted"
+      })
+  void supportedTypeRequiresServerId(String eventType) {
+    Map<String, Object> payload = new HashMap<>(ContractFixtures.payload(eventType));
+    payload.remove("serverId");
 
     assertThatThrownBy(() -> CommunityEvent.from(envelope(eventType, payload)))
         .isInstanceOf(IllegalArgumentException.class);

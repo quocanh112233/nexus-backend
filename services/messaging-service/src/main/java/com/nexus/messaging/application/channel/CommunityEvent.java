@@ -9,9 +9,24 @@ import java.util.UUID;
 public record CommunityEvent(UUID eventId, String eventType, UUID serverId, UUID channelId) {
 
   private static final Set<String> NEEDS_CHANNEL = Set.of("ChannelCreated", "ChannelDeleted");
+  private static final Set<String> SUPPORTED =
+      Set.of(
+          "ChannelCreated",
+          "ChannelDeleted",
+          "ServerDeleted",
+          "ChannelPermissionsChanged",
+          "MemberLeft",
+          "MemberKicked",
+          "MemberBanned",
+          "MemberRolesChanged",
+          "RoleUpdated",
+          "RoleDeleted");
 
-  // Đọc serverId (và channelId với kênh tạo/xóa) từ payload, thiếu hoặc sai UUID thì ném IAE
+  // Loại lạ bỏ qua payload; loại hỗ trợ bắt buộc serverId, kênh tạo/xóa thêm channelId
   public static CommunityEvent from(EventEnvelope envelope) {
+    if (!SUPPORTED.contains(envelope.eventType())) {
+      return new CommunityEvent(envelope.eventId(), envelope.eventType(), null, null);
+    }
     Map<String, Object> payload = envelope.payload();
     UUID channelId =
         NEEDS_CHANNEL.contains(envelope.eventType()) ? uuid(payload, "channelId") : null;
