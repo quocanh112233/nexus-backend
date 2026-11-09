@@ -27,8 +27,8 @@ public interface RelationshipProjection {
   // Các user được ghi nhận là member của server
   Set<UUID> membersOf(UUID serverId);
 
-  // Xóa tập members của server và tăng epoch để vô hiệu mọi snapshot đang bay
-  void deleteServer(UUID serverId);
+  // Nguyên tử: lấy members, xóa tập members và tăng epoch; trả về members đã lấy
+  Set<UUID> deleteServer(UUID serverId);
 
   // Hai user có chung ít nhất một server không
   boolean shareServer(UUID a, UUID b);

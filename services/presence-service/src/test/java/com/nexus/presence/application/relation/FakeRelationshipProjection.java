@@ -72,11 +72,12 @@ public class FakeRelationshipProjection implements RelationshipProjection {
     return Set.copyOf(members.getOrDefault(serverId, Set.of()));
   }
 
-  // Xóa tập members của server và tăng epoch
+  // Lấy và xóa tập members của server, tăng epoch, trả members đã lấy
   @Override
-  public void deleteServer(UUID serverId) {
+  public Set<UUID> deleteServer(UUID serverId) {
     epoch++;
-    members.remove(serverId);
+    Set<UUID> captured = members.remove(serverId);
+    return captured == null ? Set.of() : Set.copyOf(captured);
   }
 
   // Hai user có chung server không

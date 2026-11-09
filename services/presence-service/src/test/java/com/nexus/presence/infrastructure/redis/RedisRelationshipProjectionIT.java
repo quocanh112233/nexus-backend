@@ -2,6 +2,7 @@ package com.nexus.presence.infrastructure.redis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.nexus.presence.application.relation.ApplyRelationEventUseCase;
 import com.nexus.presence.application.relation.EnsureLoadedUseCase;
 import com.nexus.testsupport.RedisContainer;
 import java.time.Duration;
@@ -14,6 +15,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -187,6 +190,75 @@ class RedisRelationshipProjectionIT {
 
     assertThat(projection.revision(user)).isGreaterThan(r2);
     assertThat(projection.revision(other)).isPositive();
+  }
+
+  // Kịch bản: deleteServer trên server có hai member và trên server rỗng
+  // Input: load hai user cùng s1 rồi deleteServer(s1), sau đó deleteServer(s2) chưa có member
+  // Output: trả đúng hai member, tập members bị xóa, epoch tăng đúng 1 mỗi lần gọi, s2 trả rỗng
+  @Test
+  void deleteServerReturnsCapturedMembersAndBumpsEpochOnce() {
+    projection.load(user, Set.of(s1), projection.revision(user));
+    projection.load(other, Set.of(s1), projection.revision(other));
+    long epoch = epoch();
+
+    assertThat(projection.deleteServer(s1)).containsExactlyInAnyOrder(user, other);
+
+    assertThat(redis.hasKey("presence:server:" + s1 + ":members")).isFalse();
+    assertThat(epoch()).isEqualTo(epoch + 1);
+    assertThat(projection.deleteServer(s2)).isEmpty();
+    assertThat(epoch()).isEqualTo(epoch + 2);
+  }
+
+  // Kịch bản: nhiều luồng nạp user qua EnsureLoadedUseCase trong lúc ServerDeleted chạy, lặp 20
+  // vòng
+  // Input: 16 luồng ensure user riêng cùng server S, 1 luồng đặt cờ xóa rồi áp ServerDeleted(S)
+  // Output: mọi user đã loaded đều không còn S trong serversOf, dù snapshot lấy trước hay sau event
+  @Test
+  void concurrentLoadsAndServerDeletedNeverLeaveDeletedServer() throws Exception {
+    ApplyRelationEventUseCase events = new ApplyRelationEventUseCase(projection);
+    ExecutorService pool = Executors.newFixedThreadPool(17);
+    for (int round = 0; round < 20; round++) {
+      UUID server = UUID.randomUUID();
+      AtomicBoolean deleted = new AtomicBoolean();
+      EnsureLoadedUseCase ensure =
+          new EnsureLoadedUseCase(projection, id -> deleted.get() ? Set.of() : Set.of(server));
+      List<UUID> users = Stream.generate(UUID::randomUUID).limit(16).toList();
+      CountDownLatch start = new CountDownLatch(1);
+      List<Future<?>> tasks = new ArrayList<>();
+      for (UUID u : users) {
+        tasks.add(
+            pool.submit(
+                () -> {
+                  start.await();
+                  ensure.ensure(u);
+                  return null;
+                }));
+      }
+      tasks.add(
+          pool.submit(
+              () -> {
+                start.await();
+                deleted.set(true);
+                events.execute("ServerDeleted", server, null);
+                return null;
+              }));
+      start.countDown();
+      for (Future<?> f : tasks) {
+        f.get(10, TimeUnit.SECONDS);
+      }
+
+      for (UUID u : users) {
+        assertThat(projection.isLoaded(u)).isTrue();
+        assertThat(projection.serversOf(u)).doesNotContain(server);
+      }
+    }
+    pool.shutdown();
+  }
+
+  // Giá trị epoch toàn cục hiện tại, 0 nếu chưa có
+  private static long epoch() {
+    String v = redis.opsForValue().get("presence:rel:epoch");
+    return v == null ? 0 : Long.parseLong(v);
   }
 
   // Kịch bản: nhiều luồng nạp cùng revision trong lúc một event remove đến

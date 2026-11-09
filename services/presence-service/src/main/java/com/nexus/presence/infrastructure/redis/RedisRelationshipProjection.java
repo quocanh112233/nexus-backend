@@ -35,9 +35,11 @@ public class RedisRelationshipProjection implements RelationshipProjection {
           Long.class);
   private static final DefaultRedisScript<Long> REVISION =
       new DefaultRedisScript<>("return " + REVISION_SUM.formatted(1, 2), Long.class);
-  private static final DefaultRedisScript<Long> DELETE_SERVER =
+  private static final DefaultRedisScript<List> DELETE_SERVER =
       new DefaultRedisScript<>(
-          "redis.call('DEL', KEYS[1]) redis.call('INCR', KEYS[2]) return 1", Long.class);
+          "local m = redis.call('SMEMBERS', KEYS[1])"
+              + " redis.call('DEL', KEYS[1]) redis.call('INCR', KEYS[2]) return m",
+          List.class);
   private static final DefaultRedisScript<Long> ADD = script("SADD");
   private static final DefaultRedisScript<Long> REMOVE = script("SREM");
   private static final DefaultRedisScript<Long> SHARE =
@@ -103,10 +105,12 @@ public class RedisRelationshipProjection implements RelationshipProjection {
     return uuids(redis.opsForSet().members(members(serverId)));
   }
 
-  // Một Lua: xóa tập members của server và tăng epoch toàn cục
+  // Một Lua: SMEMBERS rồi DEL tập members của server và INCR epoch toàn cục, trả members đã lấy
   @Override
-  public void deleteServer(UUID serverId) {
-    redis.execute(DELETE_SERVER, List.of(members(serverId), EPOCH));
+  @SuppressWarnings("unchecked")
+  public Set<UUID> deleteServer(UUID serverId) {
+    List<String> captured = redis.execute(DELETE_SERVER, List.of(members(serverId), EPOCH));
+    return captured == null ? Set.of() : uuids(Set.copyOf(captured));
   }
 
   // SINTERCARD 2 hai tập server LIMIT 1, lớn hơn 0 là có chung server

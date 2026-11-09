@@ -2,6 +2,9 @@ package com.nexus.presence.application.relation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.nexus.presence.application.presence.FakeSessionStore;
+import com.nexus.presence.application.presence.QueryPresenceUseCase;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -69,6 +72,29 @@ class ApplyRelationEventUseCaseTest {
     assertThat(projection.serversOf(user)).containsExactly(keep);
     assertThat(projection.serversOf(other)).isEmpty();
     assertThat(projection.membersOf(server)).isEmpty();
+  }
+
+  // Kịch bản: hai user chỉ chung server bị xóa, cả hai vừa nạp xong ngay trước event ServerDeleted
+  // Input: load X và Y cùng {server}, ServerDeleted, rồi QueryPresenceUseCase theo hai chiều
+  // Output: X không thấy Y, Y không thấy X và forward set của cả hai không còn server
+  @Test
+  void usersLoadedJustBeforeServerDeletedLoseVisibility() {
+    UUID x = UUID.randomUUID();
+    UUID y = UUID.randomUUID();
+    projection.load(x, Set.of(server), projection.revision(x));
+    projection.load(y, Set.of(server), projection.revision(y));
+
+    useCase.execute("ServerDeleted", server, null);
+
+    var query =
+        new QueryPresenceUseCase(
+            new EnsureLoadedUseCase(projection, id -> Set.of()),
+            projection,
+            new FakeSessionStore());
+    assertThat(projection.serversOf(x)).doesNotContain(server);
+    assertThat(projection.serversOf(y)).doesNotContain(server);
+    assertThat(query.execute(x, List.of(y))).isEmpty();
+    assertThat(query.execute(y, List.of(x))).isEmpty();
   }
 
   // Kịch bản: cùng event giao hai lần
