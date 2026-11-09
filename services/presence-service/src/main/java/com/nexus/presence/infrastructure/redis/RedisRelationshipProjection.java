@@ -18,15 +18,26 @@ public class RedisRelationshipProjection implements RelationshipProjection {
   private static final Duration LOADED_TTL = Duration.ofHours(24);
   private static final Duration EMPTY_LOADED_TTL = Duration.ofMinutes(5);
   private static final Duration SERVERS_TTL = Duration.ofHours(25);
+  private static final String EPOCH = "presence:rel:epoch";
+  private static final String REVISION_SUM =
+      "(tonumber(redis.call('GET', KEYS[%d])) or 0) + (tonumber(redis.call('GET', KEYS[%d])) or 0)";
   private static final DefaultRedisScript<Long> LOAD =
       new DefaultRedisScript<>(
-          "redis.call('DEL', KEYS[1])"
-              + " for i = 4, #ARGV do"
+          ("if "
+              + REVISION_SUM.formatted(3, 4)
+              + " ~= tonumber(ARGV[4]) then return 0 end"
+              + " redis.call('DEL', KEYS[1])"
+              + " for i = 5, #ARGV do"
               + " redis.call('SADD', KEYS[1], ARGV[i])"
-              + " redis.call('SADD', KEYS[i - 1], ARGV[1]) end"
+              + " redis.call('SADD', KEYS[i], ARGV[1]) end"
               + " redis.call('SET', KEYS[2], '1', 'EX', ARGV[2])"
-              + " if #ARGV > 3 then redis.call('EXPIRE', KEYS[1], ARGV[3]) end return 1",
+              + " if #ARGV > 4 then redis.call('EXPIRE', KEYS[1], ARGV[3]) end return 1"),
           Long.class);
+  private static final DefaultRedisScript<Long> REVISION =
+      new DefaultRedisScript<>("return " + REVISION_SUM.formatted(1, 2), Long.class);
+  private static final DefaultRedisScript<Long> DELETE_SERVER =
+      new DefaultRedisScript<>(
+          "redis.call('DEL', KEYS[1]) redis.call('INCR', KEYS[2]) return 1", Long.class);
   private static final DefaultRedisScript<Long> ADD = script("SADD");
   private static final DefaultRedisScript<Long> REMOVE = script("SREM");
   private static final DefaultRedisScript<Long> SHARE =
@@ -52,17 +63,26 @@ public class RedisRelationshipProjection implements RelationshipProjection {
     return redis.hasKey(loaded(userId));
   }
 
-  // Một Lua: thay tập server, ghi members, đặt cờ loaded 24 giờ (5 phút nếu rỗng), servers 25 giờ
+  // Tổng rev của user và epoch, hai bộ đếm chỉ tăng nên tổng đổi khi và chỉ khi một trong hai đổi
   @Override
-  public void load(UUID userId, Set<UUID> serverIds) {
-    List<String> keys = new ArrayList<>(List.of(servers(userId), loaded(userId)));
+  public long revision(UUID userId) {
+    Long rev = redis.execute(REVISION, List.of(rev(userId), EPOCH));
+    return rev == null ? 0 : rev;
+  }
+
+  // Một Lua: đúng phiên bản mới thay tập server, ghi members, cờ loaded 24 giờ (5 phút nếu rỗng)
+  @Override
+  public boolean load(UUID userId, Set<UUID> serverIds, long expectedRevision) {
+    List<String> keys =
+        new ArrayList<>(List.of(servers(userId), loaded(userId), rev(userId), EPOCH));
     serverIds.forEach(s -> keys.add(members(s)));
     List<String> args = new ArrayList<>();
     args.add(userId.toString());
     args.add(Long.toString((serverIds.isEmpty() ? EMPTY_LOADED_TTL : LOADED_TTL).toSeconds()));
     args.add(Long.toString(SERVERS_TTL.toSeconds()));
+    args.add(Long.toString(expectedRevision));
     serverIds.forEach(s -> args.add(s.toString()));
-    redis.execute(LOAD, keys, args.toArray());
+    return Long.valueOf(1).equals(redis.execute(LOAD, keys, args.toArray()));
   }
 
   // SADD members luôn chạy, SADD tập server của user chỉ khi cờ loaded còn
@@ -83,10 +103,10 @@ public class RedisRelationshipProjection implements RelationshipProjection {
     return uuids(redis.opsForSet().members(members(serverId)));
   }
 
-  // Xóa tập members của server
+  // Một Lua: xóa tập members của server và tăng epoch toàn cục
   @Override
   public void deleteServer(UUID serverId) {
-    redis.delete(members(serverId));
+    redis.execute(DELETE_SERVER, List.of(members(serverId), EPOCH));
   }
 
   // SINTERCARD 2 hai tập server LIMIT 1, lớn hơn 0 là có chung server
@@ -96,19 +116,20 @@ public class RedisRelationshipProjection implements RelationshipProjection {
     return n != null && n > 0;
   }
 
-  // Lua: lệnh trên members luôn chạy, cùng lệnh trên tập server của user nếu cờ loaded còn
+  // Lua: tăng rev của user (25 giờ), lệnh trên members luôn chạy, trên tập server nếu cờ loaded còn
   private static DefaultRedisScript<Long> script(String command) {
     return new DefaultRedisScript<>(
-        ("redis.call('%1$s', KEYS[1], ARGV[1])"
+        ("redis.call('INCR', KEYS[4]) redis.call('EXPIRE', KEYS[4], %2$d)"
+                + " redis.call('%1$s', KEYS[1], ARGV[1])"
                 + " if redis.call('EXISTS', KEYS[3]) == 1 then"
                 + " redis.call('%1$s', KEYS[2], ARGV[2]) end return 1")
-            .formatted(command),
+            .formatted(command, SERVERS_TTL.toSeconds()),
         Long.class);
   }
 
-  // KEYS cho script: members của server, tập server của user, cờ loaded của user
+  // KEYS cho script: members của server, tập server, cờ loaded và rev của user
   private static List<String> keys(UUID userId, UUID serverId) {
-    return List.of(members(serverId), servers(userId), loaded(userId));
+    return List.of(members(serverId), servers(userId), loaded(userId), rev(userId));
   }
 
   // Key tập server của user
@@ -119,6 +140,11 @@ public class RedisRelationshipProjection implements RelationshipProjection {
   // Key cờ loaded của user
   private static String loaded(UUID userId) {
     return "presence:rel:" + userId + ":loaded";
+  }
+
+  // Key bộ đếm phiên bản quan hệ của user
+  private static String rev(UUID userId) {
+    return "presence:rel:" + userId + ":rev";
   }
 
   // Key tập members của server

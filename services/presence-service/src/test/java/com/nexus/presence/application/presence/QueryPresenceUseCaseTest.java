@@ -41,7 +41,7 @@ class QueryPresenceUseCaseTest {
   // Output: kết quả rỗng và loader không bị gọi lần nào
   @Test
   void viewerWithNoServersCausesZeroLoaderCalls() {
-    projection.load(viewer, Set.of());
+    projection.load(viewer, Set.of(), projection.revision(viewer));
 
     var result = useCase.execute(viewer, List.of(user(), user(), user()));
 
@@ -54,9 +54,9 @@ class QueryPresenceUseCaseTest {
   // Output: loader gọi đúng 1 lần (cho u1) và kết quả chỉ có l
   @Test
   void loaderFailureOnFirstUnloadedTargetStopsFurtherLoaderCalls() {
-    projection.load(viewer, Set.of(server));
+    projection.load(viewer, Set.of(server), projection.revision(viewer));
     UUID loaded = user();
-    projection.load(loaded, Set.of(server));
+    projection.load(loaded, Set.of(server), projection.revision(loaded));
     UUID u1 = user();
     UUID u2 = user();
     UUID u3 = user();
@@ -73,7 +73,7 @@ class QueryPresenceUseCaseTest {
   // Output: kết quả chỉ có viewer với status OFFLINE
   @Test
   void selfStillVisibleWhenTargetsFail() {
-    projection.load(viewer, Set.of(server));
+    projection.load(viewer, Set.of(server), projection.revision(viewer));
     UUID u = user();
     failing.add(u);
 
@@ -88,11 +88,11 @@ class QueryPresenceUseCaseTest {
   // Output: bad bị loại, ok có mặt
   @Test
   void failingTargetOmittedAndVisibleTargetReturned() {
-    projection.load(viewer, Set.of(server));
+    projection.load(viewer, Set.of(server), projection.revision(viewer));
     UUID ok = user();
     UUID bad = user();
     failing.add(bad);
-    projection.load(ok, Set.of(server));
+    projection.load(ok, Set.of(server), projection.revision(ok));
 
     var result = useCase.execute(viewer, List.of(bad, ok));
 

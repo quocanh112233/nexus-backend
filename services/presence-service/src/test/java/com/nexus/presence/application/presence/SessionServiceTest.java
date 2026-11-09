@@ -107,7 +107,7 @@ class SessionServiceTest {
   void serverIdsFromProjectionAreInPayload() {
     UUID a = UUID.randomUUID();
     UUID b = UUID.randomUUID();
-    projection.load(user, Set.of(a, b));
+    projection.load(user, Set.of(a, b), projection.revision(user));
 
     service.connect("s1", user, "i", t0);
 

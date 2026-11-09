@@ -4,12 +4,15 @@ import com.nexus.common.messaging.EventEnvelope;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 // Thu hồi subscription cục bộ khi quyền đổi, xóa khỏi sổ trước rồi mới gỡ khỏi broker
 @Component
 public class RevocationService {
 
+  private static final Logger LOG = LoggerFactory.getLogger(RevocationService.class);
   private static final String CHANNELS = "/topic/channels/";
 
   private final SubscriptionRegistry registry;
@@ -68,20 +71,30 @@ public class RevocationService {
     return s.destination().startsWith(CHANNELS);
   }
 
-  // Hỏi lại quyền tuần tự, lỗi hạ tầng đầu tiên thì thu hồi nốt phần còn lại mà không hỏi nữa
+  // Tạm dừng cả lô trước, hỏi quyền tuần tự: được thì mở lại, từ chối hay lỗi thì thu hồi
   private void recheck(List<SessionSubscription> subscriptions, String reason) {
+    registry.suspend(subscriptions);
     boolean down = false;
     for (SessionSubscription s : subscriptions) {
-      if (!down) {
+      boolean allowed = false;
+      try {
+        if (!down) {
+          allowed = stillAllowed(s);
+        }
+      } catch (AccessCheckUnavailableException e) {
+        down = true;
+      } catch (RuntimeException e) {
+        LOG.warn("Re-check quyền lỗi bất ngờ, thu hồi subscription {}", s.subscriptionId(), e);
+      }
+      if (allowed) {
+        registry.resume(s);
+      } else {
         try {
-          if (stillAllowed(s)) {
-            continue;
-          }
-        } catch (AccessCheckUnavailableException e) {
-          down = true;
+          revoke(s, reason);
+        } catch (RuntimeException e) {
+          LOG.warn("Gỡ subscription {} lỗi, sổ đã xóa", s.subscriptionId(), e);
         }
       }
-      revoke(s, reason);
     }
   }
 

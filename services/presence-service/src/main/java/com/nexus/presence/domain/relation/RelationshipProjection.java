@@ -12,8 +12,11 @@ public interface RelationshipProjection {
   // User đã nạp đủ danh sách server chưa
   boolean isLoaded(UUID userId);
 
-  // Thay toàn bộ tập server của user và đánh dấu đã nạp
-  void load(UUID userId, Set<UUID> serverIds);
+  // Phiên bản quan hệ của user (rev của user cộng epoch), chỉ tăng mỗi khi có event áp vào
+  long revision(UUID userId);
+
+  // Thay toàn bộ tập server và đánh dấu đã nạp chỉ khi phiên bản còn bằng expectedRevision
+  boolean load(UUID userId, Set<UUID> serverIds, long expectedRevision);
 
   // Ghi user vào members của server, thêm server cho user nếu đã loaded
   void addServer(UUID userId, UUID serverId);
@@ -24,7 +27,7 @@ public interface RelationshipProjection {
   // Các user được ghi nhận là member của server
   Set<UUID> membersOf(UUID serverId);
 
-  // Xóa tập members của server
+  // Xóa tập members của server và tăng epoch để vô hiệu mọi snapshot đang bay
   void deleteServer(UUID serverId);
 
   // Hai user có chung ít nhất một server không

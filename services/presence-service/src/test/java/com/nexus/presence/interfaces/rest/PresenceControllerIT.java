@@ -36,7 +36,8 @@ class PresenceControllerIT extends PresenceApiIntegrationTest {
     UUID online = UUID.randomUUID();
     UUID offline = UUID.randomUUID();
     UUID server = UUID.randomUUID();
-    Set.of(viewer, online, offline).forEach(u -> projection.load(u, Set.of(server)));
+    Set.of(viewer, online, offline)
+        .forEach(u -> projection.load(u, Set.of(server), projection.revision(u)));
     redis.opsForValue().set("presence:status:" + online, "ONLINE");
 
     HttpResponse<String> response =
@@ -57,7 +58,7 @@ class PresenceControllerIT extends PresenceApiIntegrationTest {
   @Test
   void limitOf200Enforced() throws Exception {
     UUID viewer = UUID.randomUUID();
-    projection.load(viewer, Set.of());
+    projection.load(viewer, Set.of(), projection.revision(viewer));
 
     HttpResponse<String> ok = getPresence(ids(200), bearer(viewer));
     HttpResponse<String> tooMany = getPresence(ids(201), bearer(viewer));
@@ -101,7 +102,7 @@ class PresenceControllerIT extends PresenceApiIntegrationTest {
   @Test
   void duplicateIdsAreMerged() throws Exception {
     UUID viewer = UUID.randomUUID();
-    projection.load(viewer, Set.of());
+    projection.load(viewer, Set.of(), projection.revision(viewer));
 
     HttpResponse<String> response =
         getPresence("?userIds=" + viewer + "," + viewer + "&userIds=" + viewer, bearer(viewer));

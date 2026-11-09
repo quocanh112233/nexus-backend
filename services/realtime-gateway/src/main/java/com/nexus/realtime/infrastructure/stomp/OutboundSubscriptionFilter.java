@@ -19,7 +19,7 @@ public class OutboundSubscriptionFilter implements ChannelInterceptor {
     this.registry = registry;
   }
 
-  // Trả null (bỏ frame) khi MESSAGE thiếu hoặc không còn subscription trong sổ, loại khác đi qua
+  // Trả null (bỏ frame) khi MESSAGE thiếu hoặc không giao được (mất, tạm dừng), loại khác đi qua
   @Override
   public Message<?> preSend(Message<?> message, MessageChannel channel) {
     if (SimpMessageHeaderAccessor.getMessageType(message.getHeaders()) != SimpMessageType.MESSAGE) {
@@ -28,7 +28,9 @@ public class OutboundSubscriptionFilter implements ChannelInterceptor {
     String sessionId = SimpMessageHeaderAccessor.getSessionId(message.getHeaders());
     String subscriptionId = SimpMessageHeaderAccessor.getSubscriptionId(message.getHeaders());
     boolean live =
-        sessionId != null && subscriptionId != null && registry.exists(sessionId, subscriptionId);
+        sessionId != null
+            && subscriptionId != null
+            && registry.isDeliverable(sessionId, subscriptionId);
     return live ? message : null;
   }
 }

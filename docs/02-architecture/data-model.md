@@ -97,9 +97,11 @@ Dùng được index `(channel_id, id DESC)` → độ phức tạp không phụ
 | `presence:rel:{userId}:servers` | Set | `serverId` user đang là member — projection từ `community.events` | ~25 h (đặt khi nạp) |
 | `presence:rel:{userId}:friends` | Set | `userId` bạn bè — projection từ `messaging.events` | không |
 | `presence:rel:{userId}:loaded` | String | Đánh dấu đã nạp đủ từ gRPC | 24 h (hết hạn → nạp lại, tự sửa sai lệch); 5 phút nếu user không có server nào (chặn khuếch đại ghi từ `GET /presence`) |
+| `presence:rel:{userId}:rev` | String (counter) | Phiên bản quan hệ của user: `INCR` mỗi event member áp vào user (kể cả chưa loaded), làm rào cho lần nạp snapshot | 25 h (đặt lại mỗi lần tăng) |
+| `presence:rel:epoch` | String (counter) | `INCR` mỗi `ServerDeleted`; cộng với `rev` thành phiên bản để snapshot trước khi xóa server bị chặn cả với user chưa có trong mirror members | không |
 | `presence:server:{serverId}:members` | Set | Chỉ dùng để xử lý `ServerDeleted` (biết user nào cần bỏ server) | không |
 
-Quy tắc projection: event chỉ được áp vào user **đã có** `loaded` (user chưa nạp sẽ được nạp đầy đủ từ gRPC khi cần, tránh projection thiếu). Kiểm tra `canSee(viewer, target)`: `SISMEMBER presence:rel:{viewer}:friends target` hoặc `SINTERCARD 2 presence:rel:{viewer}:servers presence:rel:{target}:servers LIMIT 1` > 0 — O(min(|A|,|B|)), vài chục phần tử mỗi user.
+Nạp snapshot có rào: đọc `rev + epoch`, gọi gRPC lấy danh sách, rồi một Lua so lại phiên bản và chỉ ghi `servers`/`loaded` khi chưa đổi (lệch thì thử lại, tối đa 3 lần, quá thì fail-closed). Quy tắc projection: event chỉ được áp vào user **đã có** `loaded` (user chưa nạp sẽ được nạp đầy đủ từ gRPC khi cần, tránh projection thiếu). Kiểm tra `canSee(viewer, target)`: `SISMEMBER presence:rel:{viewer}:friends target` hoặc `SINTERCARD 2 presence:rel:{viewer}:servers presence:rel:{target}:servers LIMIT 1` > 0 — O(min(|A|,|B|)), vài chục phần tử mỗi user.
 
 Thao tác thêm/xóa session + đổi trạng thái chạy trong **một Lua script** để nguyên tử khi nhiều instance Presence xử lý đồng thời.
 

@@ -29,8 +29,7 @@ public class StompSubscriptionRevoker implements SubscriptionRevoker {
     this.template = template;
   }
 
-  // UNSUBSCRIBE giả dọn broker (bất đồng bộ, outbound đã chặn frame) rồi báo SubscriptionRevoked
-  // kèm lý do
+  // UNSUBSCRIBE giả dọn broker (bất đồng bộ) rồi báo SubscriptionRevoked kèm lý do
   @Override
   public void revoke(SessionSubscription s, String reason) {
     StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.UNSUBSCRIBE);

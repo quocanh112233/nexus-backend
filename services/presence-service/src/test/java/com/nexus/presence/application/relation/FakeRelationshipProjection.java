@@ -13,6 +13,8 @@ public class FakeRelationshipProjection implements RelationshipProjection {
   private final Map<UUID, Set<UUID>> servers = new HashMap<>();
   private final Set<UUID> loaded = new HashSet<>();
   private final Map<UUID, Set<UUID>> members = new HashMap<>();
+  private final Map<UUID, Long> revisions = new HashMap<>();
+  private long epoch;
 
   // Tập server của user, rỗng nếu chưa có
   @Override
@@ -26,26 +28,38 @@ public class FakeRelationshipProjection implements RelationshipProjection {
     return loaded.contains(userId);
   }
 
-  // Thay tập server và đánh dấu đã nạp
+  // Phiên bản của user cộng epoch
   @Override
-  public void load(UUID userId, Set<UUID> serverIds) {
+  public long revision(UUID userId) {
+    return revisions.getOrDefault(userId, 0L) + epoch;
+  }
+
+  // Thay tập server và đánh dấu đã nạp chỉ khi phiên bản khớp
+  @Override
+  public boolean load(UUID userId, Set<UUID> serverIds, long expectedRevision) {
+    if (revision(userId) != expectedRevision) {
+      return false;
+    }
     servers.put(userId, new HashSet<>(serverIds));
     loaded.add(userId);
     serverIds.forEach(s -> members.computeIfAbsent(s, k -> new HashSet<>()).add(userId));
+    return true;
   }
 
-  // Thêm user vào members, thêm server cho user nếu đã loaded
+  // Tăng phiên bản, thêm user vào members, thêm server cho user nếu đã loaded
   @Override
   public void addServer(UUID userId, UUID serverId) {
+    revisions.merge(userId, 1L, Long::sum);
     members.computeIfAbsent(serverId, k -> new HashSet<>()).add(userId);
     if (loaded.contains(userId)) {
       servers.computeIfAbsent(userId, k -> new HashSet<>()).add(serverId);
     }
   }
 
-  // Bỏ user khỏi members, bỏ server của user nếu đã loaded
+  // Tăng phiên bản, bỏ user khỏi members, bỏ server của user nếu đã loaded
   @Override
   public void removeServer(UUID userId, UUID serverId) {
+    revisions.merge(userId, 1L, Long::sum);
     members.getOrDefault(serverId, new HashSet<>()).remove(userId);
     if (loaded.contains(userId)) {
       servers.getOrDefault(userId, new HashSet<>()).remove(serverId);
@@ -58,9 +72,10 @@ public class FakeRelationshipProjection implements RelationshipProjection {
     return Set.copyOf(members.getOrDefault(serverId, Set.of()));
   }
 
-  // Xóa tập members của server
+  // Xóa tập members của server và tăng epoch
   @Override
   public void deleteServer(UUID serverId) {
+    epoch++;
     members.remove(serverId);
   }
 

@@ -21,7 +21,7 @@ class ApplyRelationEventUseCaseTest {
   // Output: serversOf(user) chứa server và membersOf(server) chứa user
   @Test
   void memberJoinedAddsServerForLoadedUser() {
-    projection.load(user, Set.of());
+    projection.load(user, Set.of(), projection.revision(user));
 
     useCase.execute("MemberJoined", server, user);
 
@@ -35,7 +35,7 @@ class ApplyRelationEventUseCaseTest {
   @ParameterizedTest
   @ValueSource(strings = {"MemberLeft", "MemberKicked", "MemberBanned"})
   void memberRemovalEventsRemoveServer(String eventType) {
-    projection.load(user, Set.of(server));
+    projection.load(user, Set.of(server), projection.revision(user));
 
     useCase.execute(eventType, server, user);
 
@@ -61,8 +61,8 @@ class ApplyRelationEventUseCaseTest {
   void serverDeletedRemovesServerFromEveryMember() {
     UUID other = UUID.randomUUID();
     UUID keep = UUID.randomUUID();
-    projection.load(user, Set.of(server, keep));
-    projection.load(other, Set.of(server));
+    projection.load(user, Set.of(server, keep), projection.revision(user));
+    projection.load(other, Set.of(server), projection.revision(other));
 
     useCase.execute("ServerDeleted", server, null);
 
@@ -76,7 +76,7 @@ class ApplyRelationEventUseCaseTest {
   // Output: sau join tập có đúng 1 server, sau left tập rỗng, không lỗi
   @Test
   void duplicateEventIsIdempotent() {
-    projection.load(user, Set.of());
+    projection.load(user, Set.of(), projection.revision(user));
 
     useCase.execute("MemberJoined", server, user);
     useCase.execute("MemberJoined", server, user);
@@ -92,7 +92,7 @@ class ApplyRelationEventUseCaseTest {
   // Output: projection không đổi
   @Test
   void unknownEventTypeIsIgnored() {
-    projection.load(user, Set.of());
+    projection.load(user, Set.of(), projection.revision(user));
 
     useCase.execute("Whatever", server, user);
 

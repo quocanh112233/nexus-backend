@@ -28,8 +28,7 @@ public class QueryPresenceUseCase {
     this.store = store;
   }
 
-  // Giữ target được thấy theo thứ tự đầu vào; viewer lỗi thì rỗng; viewer không có server thì chỉ
-  // thấy mình
+  // Giữ target được thấy theo thứ tự; viewer lỗi thì rỗng; không có server thì chỉ thấy mình
   public Map<UUID, PresenceStatus> execute(UUID viewer, List<UUID> targets) {
     Map<UUID, PresenceStatus> result = new LinkedHashMap<>();
     try {

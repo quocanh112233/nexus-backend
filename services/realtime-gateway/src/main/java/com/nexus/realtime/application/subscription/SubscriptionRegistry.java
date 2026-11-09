@@ -1,7 +1,9 @@
 package com.nexus.realtime.application.subscription;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
@@ -12,6 +14,7 @@ import org.springframework.stereotype.Component;
 public class SubscriptionRegistry {
 
   private final Map<String, Map<String, SessionSubscription>> bySession = new ConcurrentHashMap<>();
+  private final Set<SessionSubscription> suspended = ConcurrentHashMap.newKeySet();
 
   // Ghi subscription, trả false nếu (sessionId, subscriptionId) đã có để không ghi đè
   public boolean add(SessionSubscription subscription) {
@@ -32,12 +35,41 @@ public class SubscriptionRegistry {
     return subs != null && subs.containsKey(subscriptionId);
   }
 
+  // Đã có và không bị tạm dừng thì mới được giao frame
+  public boolean isDeliverable(String sessionId, String subscriptionId) {
+    Map<String, SessionSubscription> subs = bySession.get(sessionId);
+    SessionSubscription s = subs == null ? null : subs.get(subscriptionId);
+    return s != null && !suspended.contains(s);
+  }
+
+  // Tạm dừng giao frame cho các subscription còn đúng giá trị trong sổ, bỏ qua cái đã đổi hoặc mất
+  public void suspend(Collection<SessionSubscription> subscriptions) {
+    for (SessionSubscription s : subscriptions) {
+      bySession.computeIfPresent(
+          s.sessionId(),
+          (k, subs) -> {
+            if (s.equals(subs.get(s.subscriptionId()))) {
+              suspended.add(s);
+            }
+            return subs;
+          });
+    }
+  }
+
+  // Cho giao frame lại, chỉ tác động tới đúng giá trị đã bị tạm dừng
+  public void resume(SessionSubscription expected) {
+    suspended.remove(expected);
+  }
+
   // Xóa một subscription của session
   public void remove(String sessionId, String subscriptionId) {
     bySession.computeIfPresent(
         sessionId,
         (k, subs) -> {
-          subs.remove(subscriptionId);
+          SessionSubscription old = subs.remove(subscriptionId);
+          if (old != null) {
+            suspended.remove(old);
+          }
           return subs.isEmpty() ? null : subs;
         });
   }
@@ -49,6 +81,7 @@ public class SubscriptionRegistry {
         expected.sessionId(),
         (k, subs) -> {
           removed[0] = subs.remove(expected.subscriptionId(), expected);
+          suspended.remove(expected);
           return subs.isEmpty() ? null : subs;
         });
     return removed[0];
@@ -56,7 +89,12 @@ public class SubscriptionRegistry {
 
   // Xóa mọi subscription của session
   public void removeSession(String sessionId) {
-    bySession.remove(sessionId);
+    bySession.computeIfPresent(
+        sessionId,
+        (k, subs) -> {
+          suspended.removeAll(subs.values());
+          return null;
+        });
   }
 
   // Mọi subscription tới destination (ponytail: quét toàn bộ, thêm chỉ mục nếu số lượng lớn)

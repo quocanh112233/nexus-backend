@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.nexus.realtime.application.subscription.SessionSubscription;
 import com.nexus.realtime.application.subscription.SubscriptionRegistry;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.messaging.Message;
@@ -57,5 +58,21 @@ class OutboundSubscriptionFilterTest {
 
     assertThat(filter.preSend(connected, null)).isSameAs(connected);
     assertThat(filter.preSend(heartbeat, null)).isSameAs(heartbeat);
+  }
+
+  // Kịch bản: MESSAGE tới subscription đang tạm dừng, sau đó được mở lại
+  // Input: đăng ký (s1, sub-0), suspend rồi gửi MESSAGE, resume rồi gửi lại
+  // Output: khi tạm dừng frame bị bỏ (null), sau khi resume đi qua nguyên vẹn
+  @Test
+  void suspendedSubscriptionDroppedUntilResumed() {
+    SessionSubscription sub = new SessionSubscription("s1", UUID.randomUUID(), "sub-0", "/t", null);
+    registry.add(sub);
+    registry.suspend(List.of(sub));
+    Message<byte[]> msg = message("s1", "sub-0");
+    assertThat(filter.preSend(msg, null)).isNull();
+
+    registry.resume(sub);
+
+    assertThat(filter.preSend(msg, null)).isSameAs(msg);
   }
 }

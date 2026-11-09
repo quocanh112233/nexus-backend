@@ -286,4 +286,118 @@ class RevocationServiceTest {
     assertThat(revoked).isEmpty();
     assertThat(registry.bySession("s1")).containsExactly(replacement);
   }
+
+  // Kịch bản: re-check lô hỗn hợp, user bị từ chối và user được giữ
+  // Input: ChannelPermissionsChanged, hai user cùng sub kênh, checker từ chối một user
+  // Output: user bị từ chối bị xóa, user còn lại giao được và không còn bị tạm dừng
+  @Test
+  void mixedBatchResumesAllowedAndRemovesDenied() {
+    sub("s1", user, "/topic/channels/" + channel);
+    sub("s2", other, "/topic/channels/" + channel);
+    denied.add(user);
+
+    service.onEvent(
+        event(
+            "ChannelPermissionsChanged",
+            Map.of("serverId", server.toString(), "channelId", channel.toString())));
+
+    assertThat(registry.exists("s1", "/topic/channels/" + channel)).isFalse();
+    assertThat(registry.isDeliverable("s2", "/topic/channels/" + channel)).isTrue();
+  }
+
+  // Kịch bản: checker lỗi hạ tầng giữa lô
+  // Input: MemberRolesChanged, user có 3 sub kênh, checker cho phép lần đầu rồi ném Unavailable
+  // Output: sub đầu giao được, hai sub còn lại bị thu hồi, không sub nào bị tạm dừng mãi
+  @Test
+  void unavailableMidBatchRevokesRestAndLeavesNoneSuspended() {
+    for (int i = 0; i < 3; i++) {
+      sub("s1", user, "/topic/channels/" + UUID.randomUUID());
+    }
+    onCheck =
+        () -> {
+          if (checks == 2) {
+            failing = true;
+          }
+        };
+
+    service.onEvent(
+        event(
+            "MemberRolesChanged",
+            Map.of("serverId", server.toString(), "userId", user.toString())));
+
+    assertThat(revoked).hasSize(2);
+    assertThat(checks).isEqualTo(2);
+    assertThat(registry.bySession("s1"))
+        .hasSize(1)
+        .allMatch(x -> registry.isDeliverable(x.sessionId(), x.subscriptionId()));
+  }
+
+  // Kịch bản: checker ném lỗi bất ngờ với một subscription
+  // Input: MemberRolesChanged, user có 2 sub kênh, checker ném IllegalStateException ở lần đầu
+  // Output: sub lỗi bị thu hồi, sub kia được check tiếp và giao được, không sub nào bị tạm dừng
+  @Test
+  void unexpectedErrorRevokesThatSubscriptionOnly() {
+    sub("s1", user, "/topic/channels/" + channel);
+    sub("s1", user, "/topic/channels/" + UUID.randomUUID());
+    onCheck =
+        () -> {
+          if (checks == 1) {
+            throw new IllegalStateException("boom");
+          }
+        };
+
+    service.onEvent(
+        event(
+            "MemberRolesChanged",
+            Map.of("serverId", server.toString(), "userId", user.toString())));
+
+    assertThat(revoked).hasSize(1);
+    assertThat(checks).isEqualTo(2);
+    assertThat(registry.bySession("s1"))
+        .hasSize(1)
+        .allMatch(x -> registry.isDeliverable(x.sessionId(), x.subscriptionId()));
+  }
+
+  // Kịch bản: trong lúc re-check, sub bị thay bằng giá trị khác và checker cho phép
+  // Input: MemberRolesChanged, sub-1 bị thay cùng id khác destination giữa chừng, checker cho phép
+  // Output: sub mới còn trong sổ và giao được, không bị mở lại hay xóa nhầm
+  @Test
+  void replacedDuringAllowedRecheckStaysDeliverable() {
+    registry.add(
+        new SessionSubscription("s1", user, "sub-1", "/topic/channels/" + channel, server));
+    SessionSubscription replacement =
+        new SessionSubscription(
+            "s1", user, "sub-1", "/topic/channels/" + UUID.randomUUID(), server);
+    onCheck =
+        () -> {
+          registry.remove("s1", "sub-1");
+          registry.add(replacement);
+        };
+
+    service.onEvent(
+        event(
+            "MemberRolesChanged",
+            Map.of("serverId", server.toString(), "userId", user.toString())));
+
+    assertThat(revoked).isEmpty();
+    assertThat(registry.bySession("s1")).containsExactly(replacement);
+    assertThat(registry.isDeliverable("s1", "sub-1")).isTrue();
+  }
+
+  // Kịch bản: sub đang tạm dừng rồi bị xóa và đăng ký lại đúng giá trị cũ
+  // Input: suspend sub-1, remove sub-1, add lại cùng giá trị
+  // Output: sub mới giao được ngay vì lần xóa đã dọn tạm dừng cũ
+  @Test
+  void removalClearsSuspension() {
+    SessionSubscription s =
+        new SessionSubscription("s1", user, "sub-1", "/topic/channels/" + channel, server);
+    registry.add(s);
+    registry.suspend(List.of(s));
+    assertThat(registry.isDeliverable("s1", "sub-1")).isFalse();
+
+    registry.remove("s1", "sub-1");
+    registry.add(s);
+
+    assertThat(registry.isDeliverable("s1", "sub-1")).isTrue();
+  }
 }
