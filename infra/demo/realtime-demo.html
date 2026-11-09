@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Nexus realtime demo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { font: 14px/1.4 system-ui, sans-serif; margin: 1rem auto; max-width: 56rem; padding: 0 1rem; }
+  fieldset { margin-bottom: 1rem; }
+  input { margin: 0 .5rem .5rem 0; }
+  #log { background: #111; color: #ddd; font: 12px monospace; height: 24rem; overflow: auto; padding: .5rem; white-space: pre-wrap; }
+  .err { color: #f88; } .ok { color: #8f8; }
+</style>
+</head>
+<body>
+<h1>Nexus realtime demo</h1>
+<p>Mở file này từ origin nằm trong <code>CORS_ALLOWED_ORIGINS</code> (ví dụ <code>python3 -m http.server 3000</code> trong thư mục này). Không lưu token, mất khi đóng tab.</p>
+<fieldset>
+  <legend>1. Đăng nhập (REST qua gateway)</legend>
+  <input id="base" value="http://localhost:8080" size="22" aria-label="Gateway">
+  <input id="email" placeholder="email" aria-label="Email">
+  <input id="username" placeholder="username (chỉ khi đăng ký)" aria-label="Username">
+  <input id="password" type="password" placeholder="password" aria-label="Password">
+  <button id="register">Đăng ký</button> <button id="login">Đăng nhập</button>
+</fieldset>
+<fieldset>
+  <legend>2. Kết nối và subscribe</legend>
+  <input id="server" placeholder="serverId" size="38" aria-label="Server ID">
+  <input id="channel" placeholder="channelId" size="38" aria-label="Channel ID">
+  <button id="connect" disabled>Kết nối /ws</button> <button id="disconnect" disabled>Ngắt</button>
+  <button id="typing" disabled>Gửi typing</button>
+</fieldset>
+<fieldset>
+  <legend>3. Gửi tin (REST)</legend>
+  <input id="content" placeholder="nội dung" size="40" aria-label="Nội dung">
+  <button id="send" disabled>Gửi</button>
+</fieldset>
+<div id="log" role="log"></div>
+<script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.1.1/bundles/stomp.umd.min.js"></script>
+<script>
+  const $ = (id) => document.getElementById(id);
+  let token = null, client = null;
+  // Ghi một dòng vào khung log kèm giờ, cls tùy chọn để tô màu
+  function log(text, cls) {
+    const line = document.createElement('div');
+    line.textContent = new Date().toLocaleTimeString() + ' ' + text;
+    if (cls) line.className = cls;
+    $('log').appendChild(line);
+    $('log').scrollTop = $('log').scrollHeight;
+  }
+  // Gọi REST qua gateway, ném lỗi kèm status khi không 2xx
+  async function api(method, path, body) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers.Authorization = 'Bearer ' + token;
+    const res = await fetch($('base').value + path, { method, headers, body: body && JSON.stringify(body) });
+    const text = await res.text();
+    if (!res.ok) throw new Error(res.status + ' ' + text.slice(0, 200));
+    return text ? JSON.parse(text) : null;
+  }
+  // Đăng ký hoặc đăng nhập rồi giữ access token trong biến của trang
+  async function auth(kind) {
+    try {
+      const email = $('email').value, password = $('password').value;
+      if (kind === 'register') await api('POST', '/api/v1/auth/register', { email, username: $('username').value, password });
+      token = (await api('POST', '/api/v1/auth/login', { email, password })).accessToken;
+      log('đã đăng nhập', 'ok');
+      $('connect').disabled = false; $('send').disabled = false;
+    } catch (e) { log('auth lỗi: ' + e.message, 'err'); }
+  }
+  // Hiện frame {type, eventId, occurredAt, data}; PresenceChanged và SubscriptionRevoked được nhấn mạnh
+  function onFrame(destination, message) {
+    const frame = JSON.parse(message.body);
+    log(destination + ' ' + frame.type + ' ' + JSON.stringify(frame.data), frame.type === 'SubscriptionRevoked' ? 'err' : null);
+  }
+  // Mở STOMP với header Authorization và subscribe kênh, server, hàng đợi riêng của user
+  function connect() {
+    client = new StompJs.Client({
+      brokerURL: $('base').value.replace(/^http/, 'ws') + '/ws',
+      connectHeaders: { Authorization: 'Bearer ' + token },
+      heartbeatIncoming: 10000, heartbeatOutgoing: 10000, reconnectDelay: 0,
+      onConnect: () => {
+        log('STOMP CONNECTED', 'ok');
+        [['/topic/servers/' + $('server').value], ['/topic/channels/' + $('channel').value], ['/user/queue/events']]
+          .filter(([d]) => !d.endsWith('/'))
+          .forEach(([d]) => client.subscribe(d, (m) => onFrame(d, m)));
+        $('disconnect').disabled = false; $('typing').disabled = false;
+      },
+      onStompError: (f) => log('STOMP ERROR ' + f.headers.message, 'err'),
+      onWebSocketError: () => log('WebSocket lỗi (origin hoặc gateway?)', 'err'),
+      onWebSocketClose: () => log('WebSocket đóng'),
+    });
+    client.activate();
+  }
+  $('register').onclick = () => auth('register');
+  $('login').onclick = () => auth('login');
+  $('connect').onclick = connect;
+  $('disconnect').onclick = () => client && client.deactivate();
+  $('typing').onclick = () => client.publish({ destination: '/app/channels/' + $('channel').value + '/typing', body: '{}' });
+  $('send').onclick = () => api('POST', '/api/v1/channels/' + $('channel').value + '/messages', { content: $('content').value })
+    .then(() => log('đã gửi qua REST', 'ok'), (e) => log('gửi lỗi: ' + e.message, 'err'));
+</script>
+</body>
+</html>

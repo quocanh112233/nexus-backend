@@ -12,9 +12,9 @@ File này mô tả `realtime-gateway`: cách client kết nối, cách event t�
 | Thành phần trong gateway | Vai trò |
 |-------------------------|---------|
 | STOMP endpoint `/ws` (Spring WebSocket) | Nhận kết nối |
-| `StompAuthChannelInterceptor` | `CONNECT`: verify JWT (JWKS); `SUBSCRIBE`: gọi gRPC kiểm tra quyền, từ chối → frame `ERROR` |
+| `StompAuthChannelInterceptor` | `CONNECT`: verify JWT (JWKS), chỉ kiểm hạn token lúc này; `SUBSCRIBE`: gọi gRPC bằng `x-service-token` (không chuyển JWT user, vì lúc re-check token có thể đã hết hạn), lỗi hạ tầng → từ chối (fail-closed), từ chối → frame `ERROR` |
 | Simple broker trong bộ nhớ | Giữ map destination → session của **instance này** |
-| `SubscriptionRegistry` | Ghi `(sessionId, userId, destination)` để thu hồi khi quyền đổi |
+| `SubscriptionRegistry` | Ghi `(sessionId, userId, subscriptionId, destination)` để thu hồi khi quyền đổi; là nguồn sự thật duy nhất cho `OutboundSubscriptionFilter` (chỉ frame của subscription còn trong sổ mới ra socket) |
 | `BrokerEventListener` | Nghe queue riêng `realtime-gateway.<instanceId>`, map event → destination, gọi `SimpMessagingTemplate` |
 | `PresenceReporter` | Phát `SessionConnected/Disconnected`, `GatewayHeartbeat` mỗi 30 s |
 
@@ -42,7 +42,19 @@ Ceiling (ghi rõ): mọi instance nhận mọi event → khi rất nhiều insta
 
 ## 4. Thu hồi quyền khi đang subscribe
 
-Khi nhận `MemberLeft`, `MemberKicked`, `MemberBanned`, `MemberRolesChanged`, `ChannelPermissionsChanged`, `RoleUpdated`, `RoleDeleted`, `ServerDeleted`, `ChannelDeleted`, `FriendRemoved`: gateway tìm trong `SubscriptionRegistry` các subscription liên quan trên instance của nó, gọi lại gRPC kiểm tra; không còn quyền → hủy subscription và gửi `/user/queue/events` `{type: "SubscriptionRevoked", destination}`. Cửa sổ rò rỉ: vài trăm ms (chấp nhận, ghi trong rủi ro).
+Mỗi subscription trong `SubscriptionRegistry` lưu `serverId` (topic server: từ destination; topic kênh: từ `server_id` của `CheckChannelAccess`; user queue: null). Phạm vi xử lý theo event, chỉ trên subscription của instance này:
+
+| Event | Hành động |
+|-------|-----------|
+| `MemberLeft`, `MemberKicked`, `MemberBanned` | Thu hồi **vô điều kiện** (không gọi gRPC) topic server và mọi topic kênh cùng `serverId` của user đó |
+| `ServerDeleted` | Thu hồi vô điều kiện mọi subscription có `serverId` đó (topic server và các kênh) |
+| `MemberRolesChanged` | Re-check qua gRPC chỉ các topic kênh của user đó thuộc server đó |
+| `RoleUpdated`, `RoleDeleted` | Re-check chỉ các topic kênh thuộc server đó (mọi user) |
+| `ChannelPermissionsChanged` | Re-check mọi subscription của kênh đó |
+| `ChannelDeleted` | Thu hồi vô điều kiện subscription của kênh đó |
+| `FriendRemoved` | P7 |
+
+Re-check gọi `CheckChannelAccess` bằng `x-service-token`; phía messaging RPC này dùng checker **không cache** (không qua cache `perm:*`) nên luôn đọc quyền mới từ Community. Không còn quyền (hoặc gRPC lỗi, fail-closed, lỗi đầu tiên thì thu hồi nốt phần còn lại không gọi nữa) → xóa khỏi sổ trước rồi gỡ khỏi broker và gửi `/user/queue/events` `{type: "SubscriptionRevoked", data: {destination, reason}}` với `reason` là `eventType` gây thu hồi. Bộ lọc outbound dựa trên sổ nên frame đã xếp hàng của subscription vừa bị xóa không ra socket. Cửa sổ rò rỉ: vài trăm ms giữa lúc event được commit và lúc gateway nhận và xử lý, cộng khoảng TOCTOU nhỏ giữa kiểm quyền và ghi sổ (chấp nhận, ghi trong rủi ro).
 
 ## 5. Typing (P-06)
 
@@ -77,7 +89,7 @@ Không lưu, không qua Presence, mất cũng không sao (at-most-once).
 | Độ phức tạp code | Thêm 2 consumer binding, 2 RPC, 1 policy — vừa sức, và là bài học thật về projection + nạp bù |
 | Sai lệch projection | Event mất/đến trễ → tự sửa khi `loaded` hết hạn 24 h; kick/ban/rời còn được chặn thêm ở tầng subscription |
 
-**Cách đơn giản hơn cho phase đầu (vẫn đúng quy tắc riêng tư):** ở P6 chỉ giao qua `/topic/servers/{serverId}` (người chung server) và lọc `GET /presence` theo projection server; phần bạn bè (projection `friends`, RPC `ListFriendIds`, giao `/user/queue/events`) thêm ở P7 khi có Social. Không bao giờ dùng topic broadcast chung.
+**Cách đơn giản hơn cho phase đầu (vẫn đúng quy tắc riêng tư) — đây là cái P6 đã làm:** ở P6 chỉ giao qua `/topic/servers/{serverId}` (người chung server) và lọc `GET /presence` theo projection server; phần bạn bè (projection `friends`, RPC `ListFriendIds`, giao `/user/queue/events`) thêm ở P7 khi có Social; tới đó `friendIds` của `PresenceChanged` luôn rỗng. Không bao giờ dùng topic broadcast chung.
 
 ## 7. Kết nối lại và bù dữ liệu
 
@@ -87,4 +99,4 @@ Không lưu, không qua Presence, mất cũng không sao (at-most-once).
 
 ## 8. Shutdown
 
-Gateway dừng: đóng kết nối (client reconnect sang instance khác), phát `SessionDisconnected` cho từng session; nếu chết đột ngột, Presence dọn nhờ heartbeat hết hạn (90 s).
+Gateway dừng: đóng kết nối (client reconnect sang instance khác), phát `SessionDisconnected` cho từng session; nếu chết đột ngột, Presence dọn nhờ heartbeat hết hạn: khóa `alive` TTL 60 s (heartbeat 30 s, chịu mất một lần) và job dọn chạy mỗi 15 s, nên từ `kill -9` tới OFFLINE tối đa 60 + 15 = 75 s (khoảng 30 đến 75 s).

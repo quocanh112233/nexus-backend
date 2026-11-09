@@ -6,6 +6,7 @@ import com.nexus.community.application.channel.ChannelNotFoundException;
 import com.nexus.community.application.server.ChannelPermissionResult;
 import com.nexus.community.application.server.CheckChannelPermissionsQuery;
 import com.nexus.community.application.server.CheckServerMembershipQuery;
+import com.nexus.community.application.server.ListMyServersQuery;
 import com.nexus.community.domain.channel.ChannelId;
 import com.nexus.community.domain.server.Permission;
 import com.nexus.community.domain.server.ServerId;
@@ -15,6 +16,8 @@ import com.nexus.proto.community.v1.CheckChannelPermissionsRequest;
 import com.nexus.proto.community.v1.CheckChannelPermissionsResponse;
 import com.nexus.proto.community.v1.CheckServerMembershipRequest;
 import com.nexus.proto.community.v1.CheckServerMembershipResponse;
+import com.nexus.proto.community.v1.ListServerIdsForUserRequest;
+import com.nexus.proto.community.v1.ListServerIdsForUserResponse;
 import com.nexus.proto.community.v1.PermissionServiceGrpc;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
@@ -22,7 +25,7 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Service;
 
-// Dịch vụ gRPC trả quyền kênh và tư cách thành viên cho service khác, chỉ hỏi về chính người gọi
+// Dịch vụ gRPC trả quyền kênh và thành viên, user chỉ hỏi về mình, service hỏi mọi user
 @Service
 public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServiceImplBase {
 
@@ -51,12 +54,16 @@ public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServi
 
   private final CheckChannelPermissionsQuery channelQuery;
   private final CheckServerMembershipQuery membershipQuery;
+  private final ListMyServersQuery listServersQuery;
 
-  // Nhận hai truy vấn của tầng application qua constructor
+  // Nhận ba truy vấn của tầng application qua constructor
   public PermissionGrpcService(
-      CheckChannelPermissionsQuery channelQuery, CheckServerMembershipQuery membershipQuery) {
+      CheckChannelPermissionsQuery channelQuery,
+      CheckServerMembershipQuery membershipQuery,
+      ListMyServersQuery listServersQuery) {
     this.channelQuery = channelQuery;
     this.membershipQuery = membershipQuery;
+    this.listServersQuery = listServersQuery;
   }
 
   // Trả server chứa kênh và các quyền proto user có trên kênh
@@ -106,10 +113,30 @@ public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServi
     }
   }
 
-  // Phân tích user_id và chỉ chấp nhận khi trùng subject JWT, ngược lại PERMISSION_DENIED
+  // Trả id mọi server mà user là thành viên
+  @Override
+  public void listServerIdsForUser(
+      ListServerIdsForUserRequest request, StreamObserver<ListServerIdsForUserResponse> observer) {
+    try {
+      UserId user = authorizedUser(request.getUserId());
+      observer.onNext(
+          ListServerIdsForUserResponse.newBuilder()
+              .addAllServerIds(
+                  listServersQuery.execute(user).stream().map(s -> s.id().toString()).toList())
+              .build());
+      observer.onCompleted();
+    } catch (DomainValidationException e) {
+      observer.onError(invalid());
+    } catch (io.grpc.StatusRuntimeException e) {
+      observer.onError(e);
+    }
+  }
+
+  // Phân tích user_id, service caller đã xác thực được hỏi về mọi user, user chỉ về chính mình
   private static UserId authorizedUser(String userId) {
     UserId user = UserId.of(userId);
-    if (!GrpcAuth.userId().filter(user.value()::equals).isPresent()) {
+    if (GrpcAuth.callerService().isEmpty()
+        && !GrpcAuth.userId().filter(user.value()::equals).isPresent()) {
       throw GrpcStatuses.error(
           Status.Code.PERMISSION_DENIED, DOMAIN, "PERMISSION_DENIED", "user_id mismatch");
     }

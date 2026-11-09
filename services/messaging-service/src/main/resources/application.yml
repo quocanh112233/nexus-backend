@@ -92,6 +92,14 @@ app:
     issuer: nexus-identity
     audience: nexus
   grpc:
+    # Token của messaging-service khi gọi Community không có JWT user, lấy từ env
+    service-token: ${GRPC_TOKEN_MESSAGING:}
+    # Token từ env, trống thì caller bị vô hiệu; allowlist full method name cho từng caller
+    service-callers:
+      realtime-gateway:
+        token: ${GRPC_TOKEN_REALTIME:}
+        methods:
+          - nexus.messaging.v1.ChannelAccessService/CheckChannelAccess
     community:
       target: ${COMMUNITY_GRPC_TARGET:dns:///localhost:9092}
       deadline: 300ms

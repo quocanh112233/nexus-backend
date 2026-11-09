@@ -90,6 +90,47 @@ Chạy thật bằng `docker compose -p nexus-p4demo --profile observability` (p
 
 Kiểm tay thêm: Management API thấy exchange `identity.events`, `community.events`, `messaging.events` (type topic) và có `publish_in` > 0 sau khi tạo user, server, kênh, tin; nhắn tin sinh message trên `messaging.events`. Tạo 20 kênh trong lúc `docker compose stop messaging-service` rồi bật lại: `channel_refs` đủ 21/21 (1 kênh mặc định + 20), không mất event (chưa chắc lệnh stop trùng đúng lúc đang xử lý vì 20 request chạy rất nhanh; kịch bản mất message khi đang xử lý được `GracefulShutdownIT` phủ).
 
+## P6 Realtime + Presence
+
+- **Gateway stateful, service stateless**: realtime-gateway giữ socket và sổ subscription trong bộ nhớ nên mỗi replica là một thực thể riêng (queue riêng, id theo `HOSTNAME`); presence-service không giữ gì ngoài Redis nên chạy bao nhiêu bản cũng được.
+- **Fan-out bằng queue riêng mỗi instance**: mỗi replica có queue exclusive auto-delete `realtime-gateway.<instanceId>` bind mọi exchange; broker nhân bản event vào cả hai, replica nào không có subscriber thì bỏ. Demo thấy đúng 2 queue `realtime-gateway.*` trên Management API.
+- **Lua nguyên tử cho session**: connect/disconnect/purge là script Lua một round trip nên không có trạng thái nửa vời; tombstone `presence:closed:{sid}` 60 s chặn `SessionConnected` đến muộn sau `SessionDisconnected`.
+- **Heartbeat phát hiện instance chết**: `kill -9` không phát `SessionDisconnected`, chỉ khóa `presence:instance:{i}:alive` (TTL 60 s, heartbeat 30 s) hết hạn; job dọn mỗi 15 s thấy mất `alive` rồi purge session của nó, nên cận trên kill tới OFFLINE là 60 + 15 = 75 s. (Ban đầu để 90 s + 30 s thì khoảng 60 đến 120 s, đo được 66 s chỉ là may; đã chỉnh để thiết kế đạt tiêu chí 90 s.) Heartbeat mang `sessionIds[]` và `userIds[]` song song để nối lại session mất event.
+- **Riêng tư ở tầng subscription**: không có topic presence chung; `PresenceChanged` chỉ vào `/topic/servers/{id}` mà người nghe đã qua `CheckServerMembership`, thu hồi bằng sổ subscription cộng bộ lọc outbound (frame chỉ ra khỏi socket nếu cặp session-subscription còn trong sổ). Service dùng `x-service-token` cho các lần kiểm tra sau CONNECT vì JWT user có thể đã hết hạn.
+
+Khác biệt đáng nhớ: Spring simple broker không trả frame `RECEIPT`, nên client chỉ biết SUBSCRIBE thành công bằng cách không nhận `ERROR` frame; script demo chờ 3 s không lỗi mới coi là sẵn sàng. Reactor Netty mặc định cắt dòng đầu request ở 4096 byte nên gateway trả `414` cho `GET /presence?userIds=` 200 UUID (khoảng 7,5 KB); `server.netty.max-initial-line-length: 16KB` sửa được, `GatewayWebSocketIT` đỏ `414` khi bỏ dòng này.
+
+### Rủi ro đã biết (P6)
+
+- Nạp projection quan hệ có thể đua với event: ban/rời trong lúc đang nạp `presence:rel:{u}:loaded` có thể để projection sai tới 24 h (đến lần nạp lại).
+- `PresenceChanged` và `Session*` publish đồng bộ best-effort, không outbox: broker treo thì chặn thread STOMP tới timeout (`connection-timeout 2s`, `channel-rpc-timeout 5s`); event mất được bù ở heartbeat kế tiếp hoặc lần nạp lại.
+- Heartbeat mang toàn bộ `sessionIds[]` + `userIds[]` của instance, không giới hạn kích thước (hàng chục nghìn session sẽ thành message lớn).
+- Script Lua dùng nhiều key khác slot nên không an toàn với Redis Cluster; chỉ chạy được trên Redis đơn.
+- Hạn JWT chỉ kiểm lúc CONNECT; socket đang mở giữ quyền sau khi token hết hạn cho tới khi đóng (chỉ bị thu hồi khi quyền đổi).
+- Còn các cửa sổ TOCTOU nhỏ trong sổ subscription (kiểm quyền xong, đăng ký sổ, event thu hồi đến giữa hai bước).
+- Instance id lấy từ `HOSTNAME` (id container): `kill -9` rồi restart cùng container giữ id cũ, queue exclusive cũ còn khóa tới khi broker phát hiện connection chết nên instance mới có thể không khai báo được queue ngay.
+- Tập `presence:server:{id}:members` (mirror để xử lý `ServerDeleted`) tăng không giới hạn cho user chưa bao giờ được nạp.
+- Chưa có bạn bè và DM: `friendIds` luôn rỗng, kiểm quyền kênh DM thuộc P7.
+- Lần SUBSCRIBE đầu tiên ngay sau khi stack khởi động từng quá hạn gRPC 300/500 ms (kênh lazy, lạnh) và bị từ chối fail-closed với `DEPENDENCY_UNAVAILABLE`; đã sửa bằng kết nối chủ động (`getState(true)`) ở cả realtime-gateway lẫn presence-service và `depends_on` community/messaging khỏe trong compose, nhưng kênh vẫn có thể rớt rồi nối lại trong lúc chạy.
+- Event `Session*` publish trên nhiều channel AMQP nên có thể đến presence-service sai thứ tự giữa hai session khác nhau của cùng user (IT `twoDevicesOfflineOnlyWhenLastCloses` từng flaky vì `OFFLINE` rồi `ONLINE`); tombstone chỉ che trường hợp disconnect đến trước chính connect của nó, nên user có thể chớp `OFFLINE` ngắn rồi `ONLINE` lại.
+- Server không backfill khi client reconnect: tin lỡ trong lúc mất kết nối không được đẩy lại, client phải gọi REST (`GET .../messages?after=`) vì REST là nguồn sự thật.
+- Socket dài hạn qua api-gateway: `GatewayWebSocketIT` đặt response-timeout 2 s, để socket nhàn rỗi 4 s vẫn sống và còn nhận echo, nên timeout phản hồi 30 s của gateway không cắt WebSocket; chưa chạy phiên dài hàng giờ.
+- Token service dùng chung env, một giá trị mỗi caller, chưa có mTLS (BL-13); RabbitMQ vẫn dùng chung user admin.
+- Chưa kiểm trace Tempo (không bật profile observability ở lần đóng phase này); chưa mở `infra/demo/realtime-demo.html` bằng trình duyệt thật (môi trường chạy không có trình duyệt).
+
+### Kết quả demo P6
+
+`infra/scripts/demo-p6.sh` chạy trên project cô lập (`docker compose -p nexus-p6demo`, `POSTGRES_PORT=55432`, `REDIS_PORT=56379`, token gRPC sinh ngẫu nhiên trong env), exit 0, 4 dòng `PASS`:
+
+1. RabbitMQ Management API có đúng 2 queue `realtime-gateway.*` (2 replica). PASS.
+2. Client STOMP (container `node:22-alpine`, `@stomp/stompjs@7.1.1` + `ws@8.18.3`) kết nối qua api-gateway `:8080/ws`, subscribe kênh, server, `/user/queue/events`; user kia POST tin (201) thì client nhận `MessageCreated`. PASS.
+3. Người chung server thấy B `ONLINE`; người lạ nhận `[]`. PASS.
+4. `kill -9` replica đang giữ session của B: B về `OFFLINE` trong ngưỡng 90 s. PASS.
+
+Sau vòng sửa 1 (alive-ttl 60 s, job 15 s, kênh gRPC kết nối chủ động) chạy lại 5 lần bước 4, mỗi lần kill một replica đang giữ session: 65 s, 43 s, 64 s, 45 s, 56 s (cận trên thiết kế 75 s; đã `down -v` và dựng lại sạch cho ba lần cuối, mỗi lần đủ 4 PASS và không còn lỗi `DEPENDENCY_UNAVAILABLE`/thử lại ở bước 2). Một lần chạy FAIL ở bước 3 là do tôi đổi giá trị `GRPC_TOKEN_*` giữa hai lần chạy nên compose tạo lại community/messaging với token mới còn presence giữ token cũ (`community call failed`), không phải lỗi script; script bật lại replica bằng `up -d --no-deps` để không đụng service khác. Số đo ban đầu 66 s (alive-ttl 90 s, job 30 s) là mẫu may mắn vì thiết kế cũ cho 60 đến 120 s.
+
+Script sau khi kill tự bật lại replica ở EXIT trap nên chạy lại liền được. `down -v` xong, không còn container, network, volume nào của `nexus-p6demo`.
+
 ## Bằng chứng observability (Task 13)
 
 Chạy `OTEL_ENDPOINT=http://otel-lgtm:4318 docker compose --profile observability up -d --build --wait` rồi `infra/scripts/demo-p2.sh` (exit 0, 9 bước). Truy vấn qua Grafana `http://127.0.0.1:3001` (admin/admin), datasource proxy `/api/datasources/proxy/uid/loki/loki/api/v1/query_range`; label `service_name` có 3 giá trị `api-gateway`, `community-service`, `identity-service`.
@@ -115,3 +156,4 @@ Tempo (`/api/datasources/proxy/uid/tempo/api/traces/ff2bcf46833759729884b2e9e196
 - Image identity-service nặng ~270MB filesystem (415MB theo `docker images`), vượt mục tiêu <250MB; chấp nhận vì base bắt buộc `eclipse-temurin:21-jre-alpine` đã ~212MB, jlink/JRE tùy biến hoãn sang P9.
 - Push nhánh `feat/p2-community`, mở PR, xác nhận CI xanh và các image `ghcr.io/quocanh112233/nexus-community-service`, `ghcr.io/quocanh112233/nexus-api-gateway` xuất hiện trên GHCR; sau đó tự tạo tag `v0.2.0`.
 - P5: sau khi merge, tự tạo tag `v0.5.0`; tự chạy bài message queue 2, 4, 6 và xem message rate trên RabbitMQ UI (`http://127.0.0.1:15672`).
+- P6: sau khi merge, tự tạo tag `v0.6.0`; mở `infra/demo/realtime-demo.html` bằng 2 trình duyệt (serve từ `http://localhost:3000`) để xem chat realtime, typing và presence bằng mắt; kiểm trace Tempo cho luồng WebSocket nếu cần.

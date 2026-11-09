@@ -93,4 +93,23 @@ class NexusCommonGrpcAutoConfigurationTest {
               assertThat(auth).isLessThan(mapping);
             });
   }
+
+  // Kịch bản: cấu hình app.grpc.service-callers được bind vào AuthServerInterceptor
+  // Input: property token và methods của caller realtime-gateway
+  // Output: context có bean GrpcProperties với caller đúng token và methods
+  @Test
+  void bindsServiceCallers() {
+    runner
+        .withBean(JwtDecoder.class, () -> token -> null)
+        .withPropertyValues(
+            "app.grpc.service-callers.realtime-gateway.token=t1",
+            "app.grpc.service-callers.realtime-gateway.methods[0]=a.B/c")
+        .run(
+            context -> {
+              ServiceCaller caller =
+                  context.getBean(GrpcProperties.class).serviceCallers().get("realtime-gateway");
+              assertThat(caller.token()).isEqualTo("t1");
+              assertThat(caller.methods()).containsExactly("a.B/c");
+            });
+  }
 }

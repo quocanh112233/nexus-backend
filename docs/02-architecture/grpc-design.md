@@ -63,7 +63,7 @@ option java_package = "com.nexus.proto.community.v1";
 service PermissionService {
   rpc CheckChannelPermissions(CheckChannelPermissionsRequest) returns (CheckChannelPermissionsResponse);
   rpc CheckServerMembership(CheckServerMembershipRequest) returns (CheckServerMembershipResponse);
-  // P6 thêm: rpc ListServerIdsForUser(ListServerIdsForUserRequest) returns (ListServerIdsForUserResponse);
+  rpc ListServerIdsForUser(ListServerIdsForUserRequest) returns (ListServerIdsForUserResponse);
 }
 
 enum Permission {
@@ -95,10 +95,16 @@ message CheckServerMembershipResponse {
   bool is_member = 1;
 }
 
-// P6 thêm: ListServerIdsForUserRequest { string user_id = 1; } và ListServerIdsForUserResponse { repeated string server_ids = 1; }
+message ListServerIdsForUserRequest {
+  string user_id = 1;
+}
+
+message ListServerIdsForUserResponse {
+  repeated string server_ids = 1;
+}
 ```
 
-P4 chỉ có `errors.proto`, `permission_service.proto` (2 RPC) và `user_service.proto`; `ChannelAccessService` (P6) và `SocialService` (P7) chưa có file proto.
+P6 có `errors.proto`, `permission_service.proto` (3 RPC), `user_service.proto` và `channel_access_service.proto`; `SocialService` (P7) chưa có file proto. `CheckChannelAccess` trả `OK` với `can_view=false` (không `NOT_FOUND`) cho kênh không tồn tại, đã xóa hoặc user thiếu `VIEW_CHANNEL`, `server_id` chỉ có khi `can_view=true`; Community hoặc breaker lỗi → `UNAVAILABLE`.
 
 File `messaging/v1/channel_access_service.proto`, `messaging/v1/social_service.proto` và `identity/v1/user_service.proto` (`BatchGetUsersRequest.user_ids` tối đa 100 phần tử; `granted` ở trên là các quyền kênh user có):
 
@@ -174,8 +180,27 @@ Lý do `CheckChannelPermissions` trả **toàn bộ quyền kênh** thay vì h�
 | `x-request-id` | Id request từ API Gateway | Client interceptor |
 | `traceparent` | W3C trace context | OpenTelemetry instrumentation tự động |
 | `x-caller-service` | Tên service gọi (log, metric) | Client interceptor |
+| `x-service-token` | Token riêng của service gọi khi không có user context | Client interceptor (cấu hình bằng env) |
 
-Call kiểm tra khi SUBSCRIBE (realtime-gateway) vẫn chuyển JWT của user đã CONNECT. Call **không có user context** (presence gọi `ListServerIdsForUser`, `ListFriendIds` khi xử lý event) gửi metadata `x-service-token: <token riêng của presence>` thay cho `authorization`; server chỉ chấp nhận token này cho đúng các RPC trong allowlist của caller (P-36). mTLS là backlog BL-13. Server interceptor chung ở `libs/nexus-common-grpc`: xác thực JWT, đặt MDC (`requestId`, `userId`), map exception → status.
+### Xác thực service-token (P-36)
+
+Call **không có JWT user** gửi `x-service-token` thay cho `authorization`: `realtime-gateway` (kiểm tra sau CONNECT, access token có thể đã hết hạn), `presence-service` (xử lý event) và `messaging-service` (khi nó được gọi bằng service token nên không có JWT để chuyển tiếp sang Community). Server interceptor chung ở `libs/nexus-common-grpc` (`AuthServerInterceptor`) xử lý theo thứ tự:
+
+1. Health luôn mở.
+2. Có `authorization` → chỉ đi đường JWT (sai thì `UNAUTHENTICATED`, không thử service token). Handler thấy `GrpcAuth.userId()`; Community vẫn bắt `user_id == sub`.
+3. Không có `authorization` mà có `x-service-token` → so với token từng caller đã cấu hình bằng `MessageDigest.isEqual` (duyệt hết caller, token trống bị bỏ qua). Không khớp → `UNAUTHENTICATED`; khớp nhưng full method name không nằm trong allowlist của caller → `PERMISSION_DENIED`; hợp lệ → handler chạy với `GrpcAuth.callerService()` đặt và không có `userId`, MDC có `callerService`. Với caller là service, handler Community cho phép `user_id` bất kỳ.
+4. Không có cả hai → `UNAUTHENTICATED`.
+
+Cấu hình bind `app.grpc.service-callers.<tên>.{token,methods}`. Token chỉ đến từ biến môi trường (không có giá trị mặc định trong repo, biến không đặt thì caller bị vô hiệu). `ClientMetadataInterceptor(callerService, serviceToken)` gắn `x-service-token` khi SecurityContext không có JWT; messaging đọc token của chính nó từ `app.grpc.service-token` (`GRPC_TOKEN_MESSAGING`).
+
+| Server | Caller | Env token | RPC được phép |
+|--------|--------|-----------|---------------|
+| Community | `realtime-gateway` | `GRPC_TOKEN_REALTIME` | `nexus.community.v1.PermissionService/CheckServerMembership` |
+| Community | `presence-service` | `GRPC_TOKEN_PRESENCE` | `nexus.community.v1.PermissionService/ListServerIdsForUser` |
+| Community | `messaging-service` | `GRPC_TOKEN_MESSAGING` | `nexus.community.v1.PermissionService/CheckChannelPermissions` |
+| Messaging | `realtime-gateway` | `GRPC_TOKEN_REALTIME` | `nexus.messaging.v1.ChannelAccessService/CheckChannelAccess` |
+
+Chuỗi gateway → Messaging → Community: gateway gọi `CheckChannelAccess` bằng token của nó; Messaging gọi Community `CheckChannelPermissions` bằng token của chính Messaging. mTLS là backlog BL-13. `AuthServerInterceptor` cũng đặt MDC (`requestId`, `userId` hoặc `callerService`); `ExceptionMappingServerInterceptor` map exception → status.
 
 ## 8. Thư viện
 

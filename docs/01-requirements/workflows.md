@@ -86,7 +86,7 @@ Sơ đồ: [sequence-upload-cloudinary.md](../03-diagrams/sequence-upload-cloudi
 2. realtime-gateway xác thực → `[EVT]` `SessionConnected {userId, sessionId, instanceId}`.
 3. Presence: đảm bảo projection quan hệ của user đã nạp (chưa có → `[gRPC]` `community.v1.PermissionService/ListServerIdsForUser` và `messaging.v1.SocialService/ListFriendIds`); thêm session vào Redis; nếu user chuyển 0 → 1 session → `[EVT]` `PresenceChanged(ONLINE, serverIds, friendIds)`.
 4. Ngắt kết nối → `SessionDisconnected` → nếu còn 0 session → `PresenceChanged(OFFLINE, ...)`.
-5. Mỗi 30 s mỗi instance gateway phát `GatewayHeartbeat {instanceId, sessionIds}`; instance im lặng > 90 s → Presence xóa toàn bộ session của instance đó (gateway chết đột ngột).
+5. Mỗi 30 s mỗi instance gateway phát `GatewayHeartbeat {instanceId, sessionIds}`; instance im lặng > 60 s (job dọn mỗi 15 s, tối đa 75 s kể từ lúc chết) → Presence xóa toàn bộ session của instance đó (gateway chết đột ngột).
 6. realtime-gateway đẩy `PresenceChanged` tới `/topic/servers/{serverId}` cho mỗi `serverId` (chỉ member subscribe được) và `/user/queue/events` của mỗi `friendId` → **chỉ bạn bè và người chung server nhận** (D-18, P-14).
 7. Trạng thái ban đầu: client gọi `GET /api/v1/presence?userIds=`; Presence chỉ trả trạng thái của user là chính mình, bạn bè hoặc chung server với người gọi; user khác bị bỏ khỏi kết quả.
 8. Quan hệ đổi (`MemberJoined/Left/Kicked/Banned`, `ServerDeleted`, `FriendRequestAccepted`, `FriendRemoved`) → Presence cập nhật projection; client nhận event tương ứng thì tải lại presence cho danh sách đang hiển thị.

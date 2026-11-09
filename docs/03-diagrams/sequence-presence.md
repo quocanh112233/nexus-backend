@@ -60,7 +60,7 @@ sequenceDiagram
     loop mỗi 30 giây
         RT->>MQ: GatewayHeartbeat rt1, danh sách sessionId
         MQ->>PR: GatewayHeartbeat
-        PR->>R: SET presence:instance:rt1:alive EX 90, đồng bộ tập session
+        PR->>R: SET presence:instance:rt1:alive EX 60, đồng bộ tập session
     end
 
     RT->>MQ: SessionDisconnected khi đóng tab
@@ -69,7 +69,7 @@ sequenceDiagram
     PR->>MQ: PresenceChanged OFFLINE nếu còn 0 session, kèm serverIds và friendIds
 
     Note over RT,PR: rt1 chết đột ngột, không gửi được SessionDisconnected
-    PR->>R: job mỗi 30 giây tìm instance mất khóa alive
+    PR->>R: job mỗi 15 giây tìm instance mất khóa alive
     PR->>R: xóa mọi session của rt1
     PR->>MQ: PresenceChanged OFFLINE cho user không còn session
 

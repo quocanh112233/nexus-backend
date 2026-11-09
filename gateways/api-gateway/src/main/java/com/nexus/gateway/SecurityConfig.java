@@ -51,6 +51,7 @@ public class SecurityConfig {
           ServerWebExchangeMatchers.pathMatchers(HttpMethod.GET, "/api/v1/invites/*"),
           ServerWebExchangeMatchers.pathMatchers(
               "/api/v1/auth/**",
+              "/ws/**",
               "/docs/**",
               "/swagger-ui*",
               "/swagger-ui/**",

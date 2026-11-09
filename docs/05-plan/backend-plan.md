@@ -163,15 +163,15 @@ Ký hiệu: `[ ]` việc cần làm, `[x]` đã xong — "→" tiêu chí xong.
 
 | # | Việc | Tiêu chí xong |
 |---|------|---------------|
-| 1 | `messaging/v1/channel_access_service.proto` + `ChannelAccessGrpcService` ở Messaging | Test in-process (kênh server, DM sau P7) |
-| 2 | `realtime-gateway`: `/ws`, auth CONNECT, kiểm tra SUBSCRIBE qua gRPC | Subscribe kênh không có quyền → ERROR frame |
-| 3 | Queue riêng mỗi instance + map event → destination ([bảng](../02-architecture/realtime-design.md#3-scale-nhiều-instance-p-13)) | 2 instance, client ở 2 instance nhận tin của nhau |
-| 4 | Thu hồi subscription khi quyền đổi | Gỡ role → client mất subscription ≤ 1 s |
-| 5 | Typing (FR-057) qua `TypingStarted` non-persistent | Hiện "đang gõ" ở client khác |
-| 6 | `presence-service`: consumer `presence.realtime.events`, Lua script, job dọn instance chết | `kill -9` 1 instance gateway → user của nó OFFLINE ≤ 90 s |
-| 6a | Projection quan hệ phần **server**: consumer `presence.community.events`, gRPC `ListServerIdsForUser` (thêm RPC ở Community, `x-service-token` — P-36), nạp bù lười + TTL 24 h | IT: xóa key Redis → lần kết nối sau nạp lại đúng |
-| 6b | `PresenceAudiencePolicy`; `PresenceChanged` mang `serverIds`; realtime giao qua `/topic/servers/{id}`; `GET /presence` lọc | **IT riêng tư (NFR-018):** X không chung server → không nhận event, `GET /presence` không trả A; B bị ban khỏi server chung duy nhất → hết nhận |
-| 7 | Gateway route `/ws/**`; Dockerfile + compose + workflow cho realtime-gateway, presence | CI xanh |
+| [x] 1 | `messaging/v1/channel_access_service.proto` + `ChannelAccessGrpcService` ở Messaging *(DM chờ P7)* | Test in-process (kênh server, DM sau P7) |
+| [x] 2 | `realtime-gateway`: `/ws`, auth CONNECT, kiểm tra SUBSCRIBE qua gRPC | Subscribe kênh không có quyền → ERROR frame |
+| [x] 3 | Queue riêng mỗi instance + map event → destination ([bảng](../02-architecture/realtime-design.md#3-scale-nhiều-instance-p-13)) *(demo-p6 bước 1, 2: 2 queue, client qua api-gateway nhận `MessageCreated`; chưa thử 2 client ở 2 instance khác nhau)* | 2 instance, client ở 2 instance nhận tin của nhau |
+| [x] 4 | Thu hồi subscription khi quyền đổi *(thu hồi có IT; mốc ≤ 1 s chưa đo riêng trên compose)* | Gỡ role → client mất subscription ≤ 1 s |
+| [x] 5 | Typing (FR-057) qua `TypingStarted` non-persistent *(chưa kiểm bằng 2 trình duyệt thật)* | Hiện "đang gõ" ở client khác |
+| [x] 6 | `presence-service`: consumer `presence.realtime.events`, Lua script, job dọn instance chết *(alive-ttl 60 s + job 15 s nên tối đa 75 s; số đo demo-p6 bước 4 trong journal)* | `kill -9` 1 instance gateway → user của nó OFFLINE ≤ 90 s |
+| [x] 6a | Projection quan hệ phần **server**: consumer `presence.community.events`, gRPC `ListServerIdsForUser` (thêm RPC ở Community, `x-service-token` — P-36), nạp bù lười + TTL 24 h | IT: xóa key Redis → lần kết nối sau nạp lại đúng |
+| [x] 6b | `PresenceAudiencePolicy`; `PresenceChanged` mang `serverIds`; realtime giao qua `/topic/servers/{id}`; `GET /presence` lọc *(giao qua topic server; phần bạn bè chờ P7)* | **IT riêng tư (NFR-018):** X không chung server → không nhận event, `GET /presence` không trả A; B bị ban khỏi server chung duy nhất → hết nhận |
+| [x] 7 | Gateway route `/ws/**`; Dockerfile + compose + workflow cho realtime-gateway, presence *(CI xanh trên GitHub chưa kiểm vì chưa push; trace Tempo chưa kiểm)* | [ ] CI xanh (workflow chưa chạy trên GitHub) |
 
 **Demo (M2):** 2 trình duyệt, 2 instance gateway, chat realtime + typing + online/offline.
 

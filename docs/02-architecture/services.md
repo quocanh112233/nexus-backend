@@ -155,9 +155,9 @@ Nghe: `community.events` (`ChannelCreated`, `ChannelDeleted`, `ServerDeleted` �
 | Entity | `Session` | `sessionId`, `instanceId`, `connectedAt` |
 | Projection (Redis) | `RelationshipProjection` | Tập `serverIds` và `friendIds` của user; dựng từ event, nạp bù lười qua gRPC, tự làm mới sau 24 h |
 | Domain service | `PresenceAudiencePolicy` | `canSee(viewer, target)` = cùng người, là bạn, hoặc giao tập server khác rỗng |
-| Domain event | `PresenceChanged` | Chỉ phát khi trạng thái thực sự đổi; mang `serverIds[]`, `friendIds[]` để realtime-gateway giao đúng người |
+| Domain event | `PresenceChanged` | Chỉ phát khi trạng thái thực sự đổi; mang `serverIds[]`, `friendIds[]` để realtime-gateway giao đúng người (P6: `friendIds` rỗng, phần bạn bè thuộc P7) |
 
-REST: `GET /api/v1/presence?userIds=a,b` (≤200) — chỉ trả user mà người gọi được thấy. gRPC client: `community.v1.PermissionService/ListServerIdsForUser`, `messaging.v1.SocialService/ListFriendIds`. Nghe: `realtime.events` (`SessionConnected`, `SessionDisconnected`, `GatewayHeartbeat`), `community.events` (`MemberJoined`, `MemberLeft`, `MemberKicked`, `MemberBanned`, `ServerDeleted`), `messaging.events` (`FriendRequestAccepted`, `FriendRemoved`). Không có Postgres. Redis key: [data-model.md](data-model.md#5-presence-redis).
+REST: `GET /api/v1/presence?userIds=a,b` (≤200) — chỉ trả user mà người gọi được thấy. gRPC client: `community.v1.PermissionService/ListServerIdsForUser` (xác thực bằng `x-service-token`, không có JWT user); `messaging.v1.SocialService/ListFriendIds` thuộc P7. Nghe: `realtime.events` (`SessionConnected`, `SessionDisconnected`, `GatewayHeartbeat`), `community.events` (`MemberJoined`, `MemberLeft`, `MemberKicked`, `MemberBanned`, `ServerDeleted`), `messaging.events` (`FriendRequestAccepted`, `FriendRemoved`; P7, chưa có ở P6). Không có Postgres. Redis key: [data-model.md](data-model.md#5-presence-redis).
 
 ## 5. notification-service
 
@@ -171,13 +171,13 @@ REST: `GET /api/v1/presence?userIds=a,b` (≤200) — chỉ trả user mà ngư�
 | Entity | `Mention` | Unique `(messageId, userId)` |
 | Domain event | `ReadStateUpdated`, `MentionCreated` | |
 
-REST: `GET /api/v1/read-states`, `PUT /api/v1/read-states/{channelId}`. Nghe: `community.events` (`ChannelCreated`, `ChannelDeleted`, `MemberJoined`, `MemberLeft`, `MemberKicked`, `MemberBanned`, `ServerDeleted`), `messaging.events` (`MessageCreated`, `DmChannelCreated`).
+REST: `GET /api/v1/read-states`, `PUT /api/v1/read-states/{channelId}`. Nghe: `community.events` (`ChannelCreated`, `ChannelDeleted`, `MemberJoined`, `MemberLeft`, `MemberKicked`, `MemberBanned`, `ServerDeleted`), `messaging.events` (`MessageCreated`, `DmChannelCreated`) (cả service này thuộc P8, chưa có ở P6).
 
 ## 6. realtime-gateway
 
 **Trách nhiệm:** endpoint `/ws` (STOMP), xác thực CONNECT, kiểm tra quyền khi SUBSCRIBE, đẩy event từ broker tới client, typing. Không có DB, không logic nghiệp vụ. Chi tiết: [realtime-design.md](realtime-design.md).
 
-Phát: `realtime.events` (`SessionConnected`, `SessionDisconnected`, `GatewayHeartbeat`, `TypingStarted`). Nghe: queue riêng mỗi instance bind vào mọi exchange cần đẩy cho client.
+Kiểm quyền SUBSCRIBE và thu hồi bằng gRPC `x-service-token` (Messaging `ChannelAccessService`, Community `CheckServerMembership`), không chuyển JWT user: access token có thể đã hết hạn ở lần re-check. Thu hồi nhờ sổ subscription cộng bộ lọc outbound. Phát thẳng lên broker (không outbox). Phát: `realtime.events` (`SessionConnected`, `SessionDisconnected`, `GatewayHeartbeat`, `TypingStarted`). Nghe: queue riêng mỗi instance bind vào mọi exchange cần đẩy cho client.
 
 ## 7. api-gateway
 

@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package nexus.messaging.v1;
+
+option java_multiple_files = true;
+option java_package = "com.nexus.proto.messaging.v1";
+
+// Trả lời câu hỏi user có xem được kênh không, cho gateway realtime kiểm tra khi SUBSCRIBE
+service ChannelAccessService {
+  rpc CheckChannelAccess(CheckChannelAccessRequest) returns (CheckChannelAccessResponse);
+}
+
+// Yêu cầu kiểm tra quyền xem kênh của user
+message CheckChannelAccessRequest {
+  string user_id = 1;
+  string channel_id = 2;
+}
+
+// can_view false khi kênh không tồn tại, đã xóa hoặc user thiếu VIEW_CHANNEL
+message CheckChannelAccessResponse {
+  bool can_view = 1;
+  string server_id = 2;
+  bool is_dm = 3;
+}

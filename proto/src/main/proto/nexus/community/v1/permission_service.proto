@@ -9,6 +9,7 @@ option java_package = "com.nexus.proto.community.v1";
 service PermissionService {
   rpc CheckChannelPermissions(CheckChannelPermissionsRequest) returns (CheckChannelPermissionsResponse);
   rpc CheckServerMembership(CheckServerMembershipRequest) returns (CheckServerMembershipResponse);
+  rpc ListServerIdsForUser(ListServerIdsForUserRequest) returns (ListServerIdsForUserResponse);
 }
 
 // Các quyền cấp kênh
@@ -43,4 +44,14 @@ message CheckServerMembershipRequest {
 // Kết quả kiểm tra tư cách thành viên
 message CheckServerMembershipResponse {
   bool is_member = 1;
+}
+
+// Yêu cầu liệt kê server mà user là thành viên
+message ListServerIdsForUserRequest {
+  string user_id = 1;
+}
+
+// Id mọi server user là thành viên
+message ListServerIdsForUserResponse {
+  repeated string server_ids = 1;
 }

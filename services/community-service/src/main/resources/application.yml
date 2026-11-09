@@ -82,6 +82,21 @@ app:
     jwks-read-timeout: ${JWKS_READ_TIMEOUT:5s}
     issuer: nexus-identity
     audience: nexus
+  grpc:
+    # Token từ env, trống thì caller bị vô hiệu; allowlist full method name cho từng caller
+    service-callers:
+      realtime-gateway:
+        token: ${GRPC_TOKEN_REALTIME:}
+        methods:
+          - nexus.community.v1.PermissionService/CheckServerMembership
+      presence-service:
+        token: ${GRPC_TOKEN_PRESENCE:}
+        methods:
+          - nexus.community.v1.PermissionService/ListServerIdsForUser
+      messaging-service:
+        token: ${GRPC_TOKEN_MESSAGING:}
+        methods:
+          - nexus.community.v1.PermissionService/CheckChannelPermissions
 
 springdoc:
   swagger-ui:

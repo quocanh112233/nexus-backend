@@ -89,12 +89,14 @@ Dùng được index `(channel_id, id DESC)` → độ phức tạp không phụ
 |-----|------|---------|-----|
 | `presence:user:{userId}:sessions` | Set | các `sessionId` | không |
 | `presence:session:{sessionId}` | String | `userId|instanceId` | không |
-| `presence:instance:{instanceId}:sessions` | Set | các `sessionId` của instance | không |
-| `presence:instance:{instanceId}:alive` | String | thời điểm heartbeat cuối | 90 s |
+| `presence:instance:{instanceId}:sessions` | ZSet | `sessionId`, score = `connectedAt` (ms) | không |
+| `presence:instance:{instanceId}:alive` | String | `1` — đặt NX khi session đầu tiên kết nối, làm mới bởi mỗi heartbeat (30 s) | 60 s |
+| `presence:instances` | Set | `instanceId` đã đăng ký (job dọn instance chết duyệt tập này, instance nào mất `alive` thì purge) | không |
+| `presence:closed:{sessionId}` | String | Tombstone chống `SessionConnected` đến muộn sau `SessionDisconnected` | 60 s |
 | `presence:status:{userId}` | String | `ONLINE` | không (xóa khi offline) |
-| `presence:rel:{userId}:servers` | Set | `serverId` user đang là member — projection từ `community.events` | không |
+| `presence:rel:{userId}:servers` | Set | `serverId` user đang là member — projection từ `community.events` | ~25 h (đặt khi nạp) |
 | `presence:rel:{userId}:friends` | Set | `userId` bạn bè — projection từ `messaging.events` | không |
-| `presence:rel:{userId}:loaded` | String | Đánh dấu đã nạp đủ từ gRPC | 24 h (hết hạn → nạp lại, tự sửa sai lệch) |
+| `presence:rel:{userId}:loaded` | String | Đánh dấu đã nạp đủ từ gRPC | 24 h (hết hạn → nạp lại, tự sửa sai lệch); 5 phút nếu user không có server nào (chặn khuếch đại ghi từ `GET /presence`) |
 | `presence:server:{serverId}:members` | Set | Chỉ dùng để xử lý `ServerDeleted` (biết user nào cần bỏ server) | không |
 
 Quy tắc projection: event chỉ được áp vào user **đã có** `loaded` (user chưa nạp sẽ được nạp đầy đủ từ gRPC khi cần, tránh projection thiếu). Kiểm tra `canSee(viewer, target)`: `SISMEMBER presence:rel:{viewer}:friends target` hoặc `SINTERCARD 2 presence:rel:{viewer}:servers presence:rel:{target}:servers LIMIT 1` > 0 — O(min(|A|,|B|)), vài chục phần tử mỗi user.

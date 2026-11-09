@@ -55,7 +55,7 @@ File này là danh mục chuẩn của mọi integration event: tên, producer, 
 | `ChannelPermissionsChanged` | `channel.permissions-changed` | messaging, realtime-gateway | `serverId, channelId` |
 | `MemberJoined` | `member.joined` | notification, presence, realtime-gateway | `serverId, userId, joinedAt` |
 | `MemberLeft` | `member.left` | messaging, notification, presence, realtime-gateway | `serverId, userId` |
-| `MemberKicked` | `member.kicked` | messaging, notification, presence, realtime-gateway | `serverId, userId, kickedBy` |
+| `MemberKicked` | `member.kicked` | messaging, notification, presence, realtime-gateway | `serverId, userId, kickedBy` (realtime-gateway bỏ `kickedBy` trên `/topic/servers/{id}`, giữ nguyên trên `/user/queue/events` của người bị kick) |
 | `MemberBanned` | `member.banned` | messaging, notification, presence, realtime-gateway | `serverId, userId, bannedBy, reason?, wasMember` |
 | `MemberUnbanned` | `member.unbanned` | realtime-gateway | `serverId, userId, unbannedBy` |
 | `MemberRolesChanged` | `member.roles-changed` | messaging, realtime-gateway | `serverId, userId, roleIds[]` |
@@ -87,14 +87,16 @@ Ghi chú: `permissions` là chuỗi số thập phân của bitset (tránh mất
 |-------|-------------|----------|---------------|
 | `PresenceChanged` | `presence.changed` | realtime-gateway | `userId, status (ONLINE/OFFLINE), changedAt, serverIds[], friendIds[]` — danh sách người nhận hợp lệ theo D-18; realtime-gateway **chỉ** giao tới `/topic/servers/{serverId}` của các `serverIds` và `/user/queue/events` của các `friendIds` |
 
+Ghi chú triển khai P6: `friendIds` luôn rỗng cho tới P7 (chưa có bạn bè), nên chưa có frame `PresenceChanged` nào tới `/user/queue/events`. Frame gửi cho client chỉ mang `userId, status, changedAt` (bỏ `serverIds`, `friendIds`). Cùng nguyên tắc cho `MemberBanned` trên `/topic/servers/{id}`: frame chỉ có `serverId, userId, wasMember`, không có `reason`, `bannedBy`; bản gửi cho chính user bị ban ở `/user/queue/events` giữ nguyên payload.
+
 ## 6. realtime.events
 
 | Event | Routing key | Consumer | Payload chính | Ghi chú |
 |-------|-------------|----------|---------------|---------|
 | `SessionConnected` | `session.connected` | presence | `userId, sessionId, instanceId, connectedAt` | Phát thẳng (không outbox, gateway không có DB) — mất event được bù bởi heartbeat |
 | `SessionDisconnected` | `session.disconnected` | presence | `userId, sessionId, instanceId` | Như trên |
-| `GatewayHeartbeat` | `gateway.heartbeat` | presence | `instanceId, sessionIds[], sentAt` | 30 s/lần |
-| `TypingStarted` | `typing.started` | realtime-gateway (mọi instance) | `channelId, userId, startedAt` | Non-persistent, TTL message 5 s (P-06) |
+| `GatewayHeartbeat` | `gateway.heartbeat` | presence | `instanceId, sessionIds[], userIds[], sentAt` | 30 s/lần; `userIds[]` song song với `sessionIds[]` (cùng chỉ số) để Presence nối lại session bị mất `SessionConnected`; kích thước không giới hạn theo số session của instance |
+| `TypingStarted` | `typing.started` | realtime-gateway (mọi instance) | `channelId, userId, startedAt` | Non-persistent, TTL message 5 s (P-06); mất do broker/TTL chấp nhận được vì chỉ là gợi ý UI |
 
 ## 7. notification.events
 
@@ -108,15 +110,15 @@ Ghi chú: `permissions` là chuỗi số thập phân của bitset (tránh mất
 | Queue | Exchange | Routing key bind |
 |-------|----------|------------------|
 | `messaging.community.events` | `community.events` | `channel.created`, `channel.deleted`, `channel.permissions-changed`, `server.deleted`, `member.left`, `member.kicked`, `member.banned`, `member.roles-changed`, `role.updated`, `role.deleted` |
-| `notification.community.events` | `community.events` | `channel.created`, `channel.deleted`, `member.joined`, `member.left`, `member.kicked`, `member.banned`, `server.deleted` |
+| `notification.community.events` (P8, chưa có) | `community.events` | `channel.created`, `channel.deleted`, `member.joined`, `member.left`, `member.kicked`, `member.banned`, `server.deleted` |
 | `presence.community.events` | `community.events` | `member.joined`, `member.left`, `member.kicked`, `member.banned`, `server.deleted` |
-| `presence.messaging.events` | `messaging.events` | `friend-request.accepted`, `friend.removed` |
-| `notification.messaging.events` | `messaging.events` | `message.created`, `dm-channel.created` |
+| `presence.messaging.events` (P7, chưa có) | `messaging.events` | `friend-request.accepted`, `friend.removed` |
+| `notification.messaging.events` (P8, chưa có) | `messaging.events` | `message.created`, `dm-channel.created` |
 | `presence.realtime.events` | `realtime.events` | `session.*`, `gateway.heartbeat` |
 | `realtime-gateway.<instanceId>` | `community.events` | `#` |
 | | `messaging.events` | `#` |
 | | `presence.events` | `presence.changed` |
-| | `notification.events` | `#` |
+| | `notification.events` (P8, chưa có) | `#` |
 | | `realtime.events` | `typing.started` |
 
 Ai khai báo gì: **producer** khai báo exchange của mình; **consumer** khai báo queue, DLQ và binding của mình (consumer sở hữu queue). File `infra/rabbitmq/definitions.json` chỉ dùng để tạo vhost `nexus` và user mỗi service.

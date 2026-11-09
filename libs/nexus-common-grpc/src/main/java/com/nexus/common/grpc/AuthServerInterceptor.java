@@ -7,45 +7,96 @@ import io.grpc.ServerCall;
 import io.grpc.ServerCallHandler;
 import io.grpc.ServerInterceptor;
 import io.grpc.Status;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import org.slf4j.MDC;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 
-// Xác thực JWT user trong metadata authorization, đặt userId vào Context và MDC cho handler
+// Xác thực JWT user (authorization) hoặc service-token (x-service-token), đặt Context và MDC
 public class AuthServerInterceptor implements ServerInterceptor {
 
   private static final String HEALTH_SERVICE = "grpc.health.v1.Health";
   private static final String BEARER = "Bearer ";
 
   private final JwtDecoder decoder;
+  private final Map<String, ServiceCaller> callers;
 
-  // Nhận decoder dùng chung với phần REST của service
+  // Chỉ nhận JWT user, không có service caller nào
   public AuthServerInterceptor(JwtDecoder decoder) {
-    this.decoder = decoder;
+    this(decoder, Map.of());
   }
 
-  // Từ chối call thiếu hoặc sai token, bỏ qua Health, còn lại chạy handler với Context và MDC
+  // Nhận decoder dùng chung với phần REST và các service caller (tên -> token và allowlist)
+  public AuthServerInterceptor(JwtDecoder decoder, Map<String, ServiceCaller> callers) {
+    this.decoder = decoder;
+    this.callers = callers;
+  }
+
+  // Có authorization thì xác thực JWT, không thì xác thực service-token, bỏ qua Health
   @Override
   public <ReqT, RespT> ServerCall.Listener<ReqT> interceptCall(
       ServerCall<ReqT, RespT> call, Metadata headers, ServerCallHandler<ReqT, RespT> next) {
     if (HEALTH_SERVICE.equals(call.getMethodDescriptor().getServiceName())) {
       return next.startCall(call, headers);
     }
-    UUID userId = authenticate(headers.get(GrpcAuth.AUTHORIZATION));
-    if (userId == null) {
-      call.close(
-          Status.UNAUTHENTICATED.withDescription("invalid or missing token"), new Metadata());
-      return new ServerCall.Listener<>() {};
+    String authorization = headers.get(GrpcAuth.AUTHORIZATION);
+    Context context = Context.current();
+    Map<String, String> mdc = new HashMap<>();
+    if (authorization != null) {
+      UUID userId = authenticate(authorization);
+      if (userId == null) {
+        return reject(call, Status.UNAUTHENTICATED.withDescription("invalid or missing token"));
+      }
+      context = context.withValue(GrpcAuth.USER_ID, userId);
+      mdc.put("userId", userId.toString());
+    } else {
+      String token = headers.get(GrpcAuth.SERVICE_TOKEN);
+      String caller = token == null ? null : callerOf(token);
+      if (caller == null) {
+        return reject(call, Status.UNAUTHENTICATED.withDescription("invalid or missing token"));
+      }
+      if (!callers.get(caller).methods().contains(call.getMethodDescriptor().getFullMethodName())) {
+        return reject(call, Status.PERMISSION_DENIED.withDescription("method not allowed"));
+      }
+      context = context.withValue(GrpcAuth.CALLER, caller);
+      mdc.put("callerService", caller);
     }
-    String requestId = headers.get(GrpcAuth.REQUEST_ID);
-    if (requestId == null) {
-      requestId = UUID.randomUUID().toString();
-    }
-    Context context = Context.current().withValue(GrpcAuth.USER_ID, userId);
+    mdc.put("requestId", requestIdOf(headers));
     ServerCall.Listener<ReqT> delegate = Contexts.interceptCall(context, call, headers, next);
-    return new MdcListener<>(delegate, userId.toString(), requestId);
+    return new MdcListener<>(delegate, mdc);
+  }
+
+  // Đóng call bằng status lỗi và trả listener rỗng
+  private static <ReqT, RespT> ServerCall.Listener<ReqT> reject(
+      ServerCall<ReqT, RespT> call, Status status) {
+    call.close(status, new Metadata());
+    return new ServerCall.Listener<>() {};
+  }
+
+  // Lấy x-request-id, thiếu thì sinh mới
+  private static String requestIdOf(Metadata headers) {
+    String requestId = headers.get(GrpcAuth.REQUEST_ID);
+    return requestId == null ? UUID.randomUUID().toString() : requestId;
+  }
+
+  // Tên caller có token khớp (MessageDigest.isEqual, duyệt hết), null nếu không có
+  private String callerOf(String token) {
+    byte[] given = token.getBytes(StandardCharsets.UTF_8);
+    String found = null;
+    for (Map.Entry<String, ServiceCaller> entry : callers.entrySet()) {
+      String configured = entry.getValue().token();
+      if (configured != null
+          && !configured.isBlank()
+          && MessageDigest.isEqual(given, configured.getBytes(StandardCharsets.UTF_8))) {
+        found = entry.getKey();
+      }
+    }
+    return found;
   }
 
   // Giải mã Bearer token thành userId (sub), trả null nếu header hoặc token không hợp lệ
@@ -61,29 +112,25 @@ public class AuthServerInterceptor implements ServerInterceptor {
     }
   }
 
-  // Listener đặt MDC userId và requestId quanh mỗi callback rồi xóa ngay để không rò sang call khác
+  // Listener đặt MDC quanh mỗi callback rồi xóa ngay để không rò sang call khác
   private static final class MdcListener<ReqT>
       extends io.grpc.ForwardingServerCallListener.SimpleForwardingServerCallListener<ReqT> {
 
-    private final String userId;
-    private final String requestId;
+    private final Map<String, String> mdc;
 
     // Giữ giá trị MDC của call
-    MdcListener(ServerCall.Listener<ReqT> delegate, String userId, String requestId) {
+    MdcListener(ServerCall.Listener<ReqT> delegate, Map<String, String> mdc) {
       super(delegate);
-      this.userId = userId;
-      this.requestId = requestId;
+      this.mdc = mdc;
     }
 
     // Chạy một callback với MDC được đặt, xóa MDC khi xong
     private void withMdc(Runnable callback) {
-      MDC.put("userId", userId);
-      MDC.put("requestId", requestId);
+      mdc.forEach(MDC::put);
       try {
         callback.run();
       } finally {
-        MDC.remove("userId");
-        MDC.remove("requestId");
+        mdc.keySet().forEach(MDC::remove);
       }
     }
 

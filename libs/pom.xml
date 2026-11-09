@@ -15,6 +15,7 @@
 
   <modules>
     <module>nexus-common-web</module>
+    <module>nexus-common-amqp</module>
     <module>nexus-common-messaging</module>
     <module>nexus-common-grpc</module>
     <module>nexus-common-observability</module>

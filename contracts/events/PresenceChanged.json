@@ -1,0 +1,7 @@
+{
+  "userId": "0192f0c4-7a1e-7c3d-9a1b-000000000001",
+  "status": "ONLINE",
+  "changedAt": "2026-11-08T01:02:03.123456Z",
+  "serverIds": ["0192f0c4-7a1e-7c3d-9a1b-000000000002"],
+  "friendIds": ["0192f0c4-7a1e-7c3d-9a1b-000000000003"]
+}

@@ -108,3 +108,7 @@ Không có topic presence chung: presence chỉ tới bạn bè và người chu
 ```
 
 `type` trùng tên event trong [event-catalog.md](event-catalog.md); client bỏ qua `type` không biết.
+
+`data` thường là payload như event-catalog, trừ các ngoại lệ (lọc ở realtime-gateway để không lộ danh sách người nhận, lý do ban hay người thực hiện): `PresenceChanged` chỉ mang `userId, status, changedAt`; `MemberBanned` trên `/topic/servers/{id}` chỉ mang `serverId, userId, wasMember` (không có `reason`, `bannedBy`); `MemberKicked` trên `/topic/servers/{id}` chỉ mang `serverId, userId` (không có `kickedBy`). Frame của chính user bị kick/ban trên `/user/queue/events` giữ payload đầy đủ.
+
+Khi quyền đổi, gateway gỡ subscription rồi gửi `/user/queue/events` frame `SubscriptionRevoked` với `data = { "destination": "...", "reason": "<eventType gây thu hồi>" }` (ví dụ `MemberKicked`, `ServerDeleted`, `MemberRolesChanged`). Client dựa vào `reason` để phân biệt bị kick với server bị xóa, vì frame của chính event đó không tới client sau khi subscription bị gỡ.

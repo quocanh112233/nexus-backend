@@ -1,0 +1,83 @@
+server:
+  port: 8085
+  # 200 UUID trong query + JWT vượt 8 KB mặc định của Tomcat
+  max-http-request-header-size: 16KB
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  application:
+    name: presence-service
+  # Service này chỉ là client gRPC, không mở server gRPC
+  grpc:
+    server:
+      enabled: false
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 300ms
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: 5672
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: ${RABBITMQ_VHOST:nexus}
+    # Broker treo không được chặn lâu: giới hạn thời gian kết nối và RPC kênh
+    connection-timeout: 2s
+    channel-rpc-timeout: 5s
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        prefetch: 20
+        acknowledge-mode: auto
+        default-requeue-rejected: false
+        observation-enabled: true
+
+management:
+  health:
+    rabbit:
+      enabled: false
+    # Redis chỉ là state tái dựng được nên không để nó làm readiness của service fail
+    redis:
+      enabled: false
+  # Lấy mẫu 100% trace ở local; exporter OTLP chỉ bật khi đặt OTEL_EXPORTER_OTLP_ENDPOINT
+  tracing:
+    sampling:
+      probability: 1.0
+  server:
+    port: 8185
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+app:
+  jwt:
+    jwks-uri: ${JWKS_URI}
+    jwks-connect-timeout: ${JWKS_CONNECT_TIMEOUT:2s}
+    jwks-read-timeout: ${JWKS_READ_TIMEOUT:5s}
+    issuer: nexus-identity
+    audience: nexus
+  presence:
+    # Instance im lặng quá alive-ttl bị coi là chết (heartbeat 30 s, chịu mất 1 lần), job dọn mỗi
+    # dead-instance-interval; kill -9 tới OFFLINE tối đa 60 + 15 = 75 s
+    alive-ttl: 60s
+    dead-instance-interval: 15s
+  grpc:
+    # Token của presence-service khi gọi Community, lấy từ env
+    service-token: ${GRPC_TOKEN_PRESENCE:}
+    community:
+      target: ${COMMUNITY_GRPC_TARGET:dns:///localhost:9092}
+
+logging:
+  structured:
+    format:
+      console: ecs

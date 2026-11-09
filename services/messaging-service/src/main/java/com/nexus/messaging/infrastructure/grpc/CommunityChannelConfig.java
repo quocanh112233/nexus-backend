@@ -19,9 +19,11 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 // Dựng kênh gRPC, circuit breaker và checker quyền có cache tới Community
@@ -38,6 +40,12 @@ public class CommunityChannelConfig {
   // Áp retryPolicy (3 lần thử UNAVAILABLE), interceptor metadata và observation lên builder
   public static ManagedChannelBuilder<?> configure(
       ManagedChannelBuilder<?> builder, ObservationRegistry registry) {
+    return configure(builder, registry, null);
+  }
+
+  // Như trên, thêm service token để call không có JWT user vẫn xác thực được với Community
+  public static ManagedChannelBuilder<?> configure(
+      ManagedChannelBuilder<?> builder, ObservationRegistry registry, String serviceToken) {
     Map<String, Object> retryPolicy =
         Map.of(
             "maxAttempts",
@@ -58,7 +66,7 @@ public class CommunityChannelConfig {
             retryPolicy);
     builder.defaultServiceConfig(Map.of("methodConfig", List.of(methodConfig)));
     builder.enableRetry();
-    builder.intercept(new ClientMetadataInterceptor("messaging-service"));
+    builder.intercept(new ClientMetadataInterceptor("messaging-service", serviceToken));
     builder.intercept(new ObservationGrpcClientInterceptor(registry));
     return builder;
   }
@@ -90,12 +98,18 @@ public class CommunityChannelConfig {
     }
   }
 
-  // Dựng kênh plaintext (mạng Docker nội bộ, TLS ở BL-13) tới target (round_robin), kết nối ngay
+  // Dựng kênh tới target không dùng service token
   public static ManagedChannel newChannel(String target, ObservationRegistry registry) {
+    return newChannel(target, registry, null);
+  }
+
+  // Dựng kênh plaintext (mạng Docker nội bộ, TLS ở BL-13) tới target (round_robin), kết nối ngay
+  public static ManagedChannel newChannel(
+      String target, ObservationRegistry registry, String serviceToken) {
     ManagedChannelBuilder<?> builder = ManagedChannelBuilder.forTarget(target);
     builder.usePlaintext();
     builder.defaultLoadBalancingPolicy("round_robin");
-    ManagedChannel channel = configure(builder, registry).build();
+    ManagedChannel channel = configure(builder, registry, serviceToken).build();
     channel.getState(true);
     return channel;
   }
@@ -103,8 +117,10 @@ public class CommunityChannelConfig {
   // Kênh tới Community, đóng khi context tắt
   @Bean(destroyMethod = "shutdownNow")
   ManagedChannel communityChannel(
-      @Value("${app.grpc.community.target}") String target, ObservationRegistry registry) {
-    return newChannel(target, registry);
+      @Value("${app.grpc.community.target}") String target,
+      @Value("${app.grpc.service-token:}") String serviceToken,
+      ObservationRegistry registry) {
+    return newChannel(target, registry, serviceToken);
   }
 
   // Breaker "community" theo app.grpc.community.circuit-breaker.*, đã đăng ký metric
@@ -123,22 +139,26 @@ public class CommunityChannelConfig {
     return breaker;
   }
 
-  // Bean ChannelPermissionChecker duy nhất: cache Redis bọc tombstone bọc client gRPC tới Community
+  // Checker không cache (tombstone bọc gRPC) chỉ cho ChannelAccess RPC, luôn hỏi Community
   @Bean
-  ChannelPermissionChecker channelPermissionChecker(
+  ChannelPermissionChecker uncachedChannelPermissionChecker(
       ManagedChannel communityChannel,
       CircuitBreaker communityCircuitBreaker,
       ChannelRefRepository channelRefs,
+      @Value("${app.grpc.community.deadline:300ms}") Duration deadline) {
+    return new TombstoneChannelPermissionChecker(
+        channelRefs,
+        new GrpcChannelPermissionChecker(communityChannel, communityCircuitBreaker, deadline));
+  }
+
+  // Checker mặc định cho REST và message: cache Redis bọc checker không cache
+  @Bean
+  @Primary
+  ChannelPermissionChecker channelPermissionChecker(
+      @Qualifier("uncachedChannelPermissionChecker") ChannelPermissionChecker uncached,
       StringRedisTemplate redis,
       MeterRegistry registry,
-      @Value("${app.grpc.community.deadline:300ms}") Duration deadline,
       @Value("${app.cache.permission-ttl:60s}") Duration ttl) {
-    return new CachingChannelPermissionChecker(
-        new TombstoneChannelPermissionChecker(
-            channelRefs,
-            new GrpcChannelPermissionChecker(communityChannel, communityCircuitBreaker, deadline)),
-        redis,
-        registry,
-        ttl);
+    return new CachingChannelPermissionChecker(uncached, redis, registry, ttl);
   }
 }

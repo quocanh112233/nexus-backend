@@ -1,5 +1,8 @@
 server:
   port: 8080
+  netty:
+    # 200 UUID trong query presence (~7,5 KB) vượt 4096 mặc định của dòng đầu request
+    max-initial-line-length: 16KB
 
 spring:
   application:
@@ -113,6 +116,24 @@ spring:
                     redis-rate-limiter.burstCapacity: 300
                     deny-empty-key: true
                     throw-on-limit: true
+            - id: presence
+              uri: ${PRESENCE_URI:http://presence-service:8085}
+              predicates:
+                - Path=/api/v1/presence/**
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@subKeyResolver}"
+                    redis-rate-limiter.replenishRate: 5
+                    redis-rate-limiter.requestedTokens: 3
+                    redis-rate-limiter.burstCapacity: 300
+                    deny-empty-key: true
+                    throw-on-limit: true
+            # WebSocket: không rate limit và không Bearer ở handshake, xác thực nằm ở frame STOMP CONNECT
+            - id: realtime
+              uri: ws://${REALTIME_URI:realtime-gateway:8084}
+              predicates:
+                - Path=/ws/**
             - id: identity-docs
               uri: ${IDENTITY_URI:http://identity-service:8081}
               predicates:

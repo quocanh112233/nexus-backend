@@ -35,6 +35,11 @@ class ClientMetadataInterceptorTest {
 
   // Gọi một RPC qua ClientMetadataInterceptor và trả metadata mà server thấy
   private Metadata call() {
+    return call(new ClientMetadataInterceptor("messaging-service"));
+  }
+
+  // Gọi một RPC qua interceptor cho trước và trả metadata mà server thấy
+  private Metadata call(ClientMetadataInterceptor interceptor) {
     ServerInterceptor capture =
         new ServerInterceptor() {
           // Server giả chụp lại metadata nhận được
@@ -56,8 +61,7 @@ class ClientMetadataInterceptorTest {
             observer.onCompleted();
           }
         };
-    try (GrpcTestServer server =
-        new GrpcTestServer(capture, new ClientMetadataInterceptor("messaging-service"), service)) {
+    try (GrpcTestServer server = new GrpcTestServer(capture, interceptor, service)) {
       PermissionServiceGrpc.newBlockingStub(server.channel())
           .checkServerMembership(CheckServerMembershipRequest.getDefaultInstance());
     }
@@ -102,5 +106,33 @@ class ClientMetadataInterceptorTest {
   void ignoresNonJwtAuthentication() {
     SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken("u", "p"));
     assertThat(call().containsKey(GrpcAuth.AUTHORIZATION)).isFalse();
+  }
+
+  // Kịch bản: interceptor có service token và không có SecurityContext JWT
+  // Input: ctor (messaging-service, tok-m), ngữ cảnh trống
+  // Output: server thấy x-service-token tok-m và không có authorization
+  @Test
+  void attachesServiceTokenWhenNoJwt() {
+    Metadata headers = call(new ClientMetadataInterceptor("messaging-service", "tok-m"));
+    assertThat(headers.get(GrpcAuth.SERVICE_TOKEN)).isEqualTo("tok-m");
+    assertThat(headers.containsKey(GrpcAuth.AUTHORIZATION)).isFalse();
+  }
+
+  // Kịch bản: có JWT của user thì không chép service token
+  // Input: ctor có tok-m và SecurityContext JwtAuthenticationToken
+  // Output: server thấy Bearer, không có x-service-token
+  @Test
+  void jwtWinsOverServiceToken() {
+    Jwt token =
+        new Jwt(
+            "token-abc",
+            Instant.now(),
+            Instant.now().plusSeconds(60),
+            Map.of("alg", "RS256"),
+            Map.of("sub", "u"));
+    SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(token));
+    Metadata headers = call(new ClientMetadataInterceptor("messaging-service", "tok-m"));
+    assertThat(headers.get(GrpcAuth.AUTHORIZATION)).isEqualTo("Bearer token-abc");
+    assertThat(headers.containsKey(GrpcAuth.SERVICE_TOKEN)).isFalse();
   }
 }
