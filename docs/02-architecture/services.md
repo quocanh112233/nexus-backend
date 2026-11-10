@@ -140,7 +140,7 @@ gRPC server: `messaging.v1.ChannelAccessService` — `CheckChannelAccess`; `mess
 gRPC client: `community.v1.PermissionService/CheckChannelPermissions`, `identity.v1.UserService/GetUser`.
 Nghe: `community.events` (`ChannelCreated`, `ChannelDeleted`, `ServerDeleted` → `channel_refs`; `RoleUpdated`, `RoleDeleted`, `MemberRolesChanged`, `MemberLeft`, `MemberKicked`, `MemberBanned`, `ChannelPermissionsChanged`, `ServerDeleted` → xóa cache quyền).
 
-**Trạng thái P4:** đã có gửi/sửa/xóa/lịch sử/reaction/chữ ký đính kèm; chưa có bạn bè, DM, gRPC server `ChannelAccessService` (P6) và `SocialService` (P7), chưa nghe `community.events` (P5, cache quyền P4 chỉ hết hạn theo TTL 30 s). Chi tiết thực tế:
+**Trạng thái tại P4 (snapshot):** đã có gửi/sửa/xóa/lịch sử/reaction/chữ ký đính kèm; khi đó chưa có bạn bè, DM, gRPC server `ChannelAccessService` (P6) và `SocialService` (P7), chưa nghe `community.events` (P5, cache quyền P4 chỉ hết hạn theo TTL 30 s); các phần này đã có từ P5–P7, xem gRPC server và `Nghe` ở trên. Chi tiết thực tế:
 - Gửi tin: body `{content, nonce?, replyToId?, attachments?[{publicId, resourceType, originalFilename?}]}`; `resourceType` là `image|raw|video` (client gửi vì Cloudinary Admin API cần); `content` được rỗng khi có attachment; gửi lại cùng `nonce` trả `200` với tin cũ. Server tự lấy `url`, `contentType`, `bytes` từ Cloudinary và chỉ nhận `publicId` nằm trong thư mục upload của chính user trong kênh (khác → `400`).
 - Không có `VIEW_CHANNEL` → `404`; thiếu quyền khác → `403`. Xóa tin hai lần đều `204`; sửa nội dung trùng không sinh event. Kiểm tra quyền lỗi hạ tầng (Community chết, hết deadline, breaker mở) → `503 DEPENDENCY_UNAVAILABLE`.
 - Rate limit gửi tin ở gateway: burst 5, bền vững 60/phút/user.
@@ -155,9 +155,9 @@ Nghe: `community.events` (`ChannelCreated`, `ChannelDeleted`, `ServerDeleted` �
 | Entity | `Session` | `sessionId`, `instanceId`, `connectedAt` |
 | Projection (Redis) | `RelationshipProjection` | Tập `serverIds` và `friendIds` của user; dựng từ event, nạp bù lười qua gRPC, tự làm mới sau 24 h |
 | Domain service | `PresenceAudiencePolicy` | `canSee(viewer, target)` = cùng người, là bạn, hoặc giao tập server khác rỗng |
-| Domain event | `PresenceChanged` | Chỉ phát khi trạng thái thực sự đổi; mang `serverIds[]`, `friendIds[]` để realtime-gateway giao đúng người (P6: `friendIds` rỗng, phần bạn bè thuộc P7) |
+| Domain event | `PresenceChanged` | Chỉ phát khi trạng thái thực sự đổi; mang `serverIds[]`, `friendIds[]` để realtime-gateway giao đúng người (`friendIds` là toàn bộ bạn trong projection, rỗng khi nạp lỗi; bạn chung server có thể nhận frame ở cả hai đường) |
 
-REST: `GET /api/v1/presence?userIds=a,b` (≤200) — chỉ trả user mà người gọi được thấy. gRPC client: `community.v1.PermissionService/ListServerIdsForUser` (xác thực bằng `x-service-token`, không có JWT user); `messaging.v1.SocialService/ListFriendIds` thuộc P7. Nghe: `realtime.events` (`SessionConnected`, `SessionDisconnected`, `GatewayHeartbeat`), `community.events` (`MemberJoined`, `MemberLeft`, `MemberKicked`, `MemberBanned`, `ServerDeleted`), `messaging.events` (`FriendRequestAccepted`, `FriendRemoved`; P7, chưa có ở P6). Không có Postgres. Redis key: [data-model.md](data-model.md#5-presence-redis).
+REST: `GET /api/v1/presence?userIds=a,b` (≤200) — chỉ trả user mà người gọi được thấy. gRPC client: `community.v1.PermissionService/ListServerIdsForUser` (xác thực bằng `x-service-token`, không có JWT user); `messaging.v1.SocialService/ListFriendIds` (xác thực bằng `GRPC_TOKEN_PRESENCE`). Nghe: `realtime.events` (`SessionConnected`, `SessionDisconnected`, `GatewayHeartbeat`), `community.events` (`MemberJoined`, `MemberLeft`, `MemberKicked`, `MemberBanned`, `ServerDeleted`), `messaging.events` (`FriendRequestAccepted`, `FriendRemoved`, qua queue `presence.messaging.events`). Không có Postgres. Redis key: [data-model.md](data-model.md#5-presence-redis).
 
 ## 5. notification-service
 

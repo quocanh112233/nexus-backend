@@ -3,9 +3,16 @@ package com.nexus.messaging.interfaces.rest;
 import com.nexus.common.web.ProblemBodies;
 import com.nexus.messaging.application.shared.ChannelNotFoundException;
 import com.nexus.messaging.application.shared.DependencyUnavailableException;
+import com.nexus.messaging.application.shared.FriendNotFoundException;
 import com.nexus.messaging.application.shared.MessageNotFoundException;
 import com.nexus.messaging.application.shared.PermissionDeniedException;
+import com.nexus.messaging.application.shared.UserNotFoundException;
 import com.nexus.messaging.domain.shared.DomainValidationException;
+import com.nexus.messaging.domain.social.AlreadyFriendsException;
+import com.nexus.messaging.domain.social.FriendActionForbiddenException;
+import com.nexus.messaging.domain.social.FriendRequestExistsException;
+import com.nexus.messaging.domain.social.FriendRequestNotPendingException;
+import com.nexus.messaging.domain.social.NotFriendsException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -33,18 +40,51 @@ class MessagingExceptionHandler {
     return problem(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", ex.getMessage(), request);
   }
 
-  // Kênh hoặc tin không tồn tại, hoặc user không thấy kênh, thành 404
-  @ExceptionHandler({ChannelNotFoundException.class, MessageNotFoundException.class})
+  // Kênh, tin, user, lời mời hoặc quan hệ bạn bè không tồn tại hay không thấy được, thành 404
+  @ExceptionHandler({
+    ChannelNotFoundException.class,
+    MessageNotFoundException.class,
+    UserNotFoundException.class,
+    FriendNotFoundException.class
+  })
   ResponseEntity<Map<String, Object>> handleNotFound(
       RuntimeException ex, HttpServletRequest request) {
     return problem(HttpStatus.NOT_FOUND, "NOT_FOUND", ex.getMessage(), request);
   }
 
-  // User thiếu quyền thành 403 PERMISSION_DENIED
-  @ExceptionHandler(PermissionDeniedException.class)
+  // User thiếu quyền hoặc sai vai trên lời mời thành 403 PERMISSION_DENIED
+  @ExceptionHandler({PermissionDeniedException.class, FriendActionForbiddenException.class})
   ResponseEntity<Map<String, Object>> handleForbidden(
-      PermissionDeniedException ex, HttpServletRequest request) {
+      RuntimeException ex, HttpServletRequest request) {
     return problem(HttpStatus.FORBIDDEN, "PERMISSION_DENIED", ex.getMessage(), request);
+  }
+
+  // Mở DM với người không phải bạn thành 403 NOT_FRIENDS
+  @ExceptionHandler(NotFriendsException.class)
+  ResponseEntity<Map<String, Object>> handleNotFriends(
+      NotFriendsException ex, HttpServletRequest request) {
+    return problem(HttpStatus.FORBIDDEN, "NOT_FRIENDS", ex.getMessage(), request);
+  }
+
+  // Lời mời không còn chờ thành 409 VERSION_CONFLICT
+  @ExceptionHandler(FriendRequestNotPendingException.class)
+  ResponseEntity<Map<String, Object>> handleNotPending(
+      FriendRequestNotPendingException ex, HttpServletRequest request) {
+    return problem(HttpStatus.CONFLICT, "VERSION_CONFLICT", ex.getMessage(), request);
+  }
+
+  // Đã là bạn thành 409 ALREADY_FRIENDS
+  @ExceptionHandler(AlreadyFriendsException.class)
+  ResponseEntity<Map<String, Object>> handleAlreadyFriends(
+      AlreadyFriendsException ex, HttpServletRequest request) {
+    return problem(HttpStatus.CONFLICT, "ALREADY_FRIENDS", ex.getMessage(), request);
+  }
+
+  // Đã có lời mời đang chờ cùng chiều thành 409 FRIEND_REQUEST_EXISTS
+  @ExceptionHandler(FriendRequestExistsException.class)
+  ResponseEntity<Map<String, Object>> handleRequestExists(
+      FriendRequestExistsException ex, HttpServletRequest request) {
+    return problem(HttpStatus.CONFLICT, "FRIEND_REQUEST_EXISTS", ex.getMessage(), request);
   }
 
   // Community không trả lời thì fail-closed thành 503, không lộ nguyên nhân gốc

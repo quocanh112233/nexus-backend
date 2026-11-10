@@ -59,7 +59,7 @@ public final class Message {
     this.version = version;
   }
 
-  // Tạo tin mới và phát MessageCreated; serverId chỉ dùng cho sự kiện, không lưu vào tin
+  // Tạo tin mới và phát MessageCreated; serverId (null với DM) chỉ dùng cho sự kiện, không lưu
   public static Message create(
       MessageId id,
       ChannelId channelId,

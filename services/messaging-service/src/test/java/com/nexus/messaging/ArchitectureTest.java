@@ -67,6 +67,22 @@ class ArchitectureTest {
           .dependOnClassesThat()
           .resideInAPackage("com.nexus.messaging.infrastructure..");
 
+  // Kịch bản: social chỉ dùng chung domain.shared với message, không chạm nội bộ message/reaction
+  // Input: mọi class trong domain.social và application.social
+  // Output: không class nào phụ thuộc domain.message, domain.reaction, persistence.message
+  @ArchTest
+  static final ArchRule socialDoesNotDependOnMessageInternals =
+      noClasses()
+          .that()
+          .resideInAnyPackage(
+              "com.nexus.messaging.domain.social..", "com.nexus.messaging.application.social..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAnyPackage(
+              "com.nexus.messaging.domain.message..",
+              "com.nexus.messaging.domain.reaction..",
+              "com.nexus.messaging.infrastructure.persistence.message..");
+
   // Kịch bản: giao dịch cấp class chỉ mở ở use case của tầng application
   // Input: mọi class ngoài com.nexus.messaging.application
   // Output: không class nào gắn @Transactional

@@ -2,15 +2,21 @@ package com.nexus.messaging.application.port;
 
 import com.nexus.messaging.application.shared.ChannelNotFoundException;
 import com.nexus.messaging.application.shared.PermissionDeniedException;
+import com.nexus.messaging.domain.shared.ChannelPermission;
 import java.util.Set;
 import java.util.UUID;
 
-// Server chứa kênh và các quyền user có trên kênh đó
+// Server chứa kênh (null với kênh DM) và các quyền user có trên kênh đó
 public record ChannelAccess(UUID serverId, Set<ChannelPermission> granted) {
 
   // Sao chép bất biến tập quyền
   public ChannelAccess {
     granted = Set.copyOf(granted);
+  }
+
+  // True nếu là kênh DM, tức không thuộc server nào
+  public boolean isDm() {
+    return serverId == null;
   }
 
   // Kiểm tra user có quyền p hay không

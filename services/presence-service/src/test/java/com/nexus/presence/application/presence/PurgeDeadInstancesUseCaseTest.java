@@ -57,7 +57,8 @@ class PurgeDeadInstancesUseCaseTest {
 
   // Dựng use case với notifier ghi lại thay đổi vào danh sách published
   private PurgeDeadInstancesUseCase useCase(FakeSessionStore store) {
-    EnsureLoadedUseCase ensure = new EnsureLoadedUseCase(projection, id -> Set.of());
+    EnsureLoadedUseCase ensure =
+        new EnsureLoadedUseCase(projection, id -> Set.of(), id -> Set.of());
     return new PurgeDeadInstancesUseCase(
         store, new PresenceChangeNotifier(ensure, projection, published::add, Clock.systemUTC()));
   }

@@ -11,6 +11,8 @@ services:
       DB_USER: identity_svc
       DB_PASSWORD: ${IDENTITY_DB_PASSWORD:?}
       JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_private_key
+      # Allowlist token phía server gRPC: messaging-service gọi UserService/GetUser
+      GRPC_TOKEN_MESSAGING: ${GRPC_TOKEN_MESSAGING:?}
       JWT_KEY_ID: ${JWT_KEY_ID:-nexus-1}
       # COOKIE_SECURE=false vì demo local chạy HTTP; bật true khi có HTTPS
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
@@ -75,6 +77,9 @@ services:
       # GRPC_TOKEN_MESSAGING là token khi gọi Community (cùng giá trị phía Community); GRPC_TOKEN_REALTIME cho allowlist realtime-gateway
       GRPC_TOKEN_MESSAGING: ${GRPC_TOKEN_MESSAGING:?}
       GRPC_TOKEN_REALTIME: ${GRPC_TOKEN_REALTIME:?}
+      # Allowlist presence-service gọi SocialService/ListFriendIds; Identity là nguồn tên user cho DM/bạn bè
+      GRPC_TOKEN_PRESENCE: ${GRPC_TOKEN_PRESENCE:?}
+      IDENTITY_GRPC_TARGET: dns:///identity-service:9091
       REDIS_HOST: redis
       # ponytail: key Cloudinary rỗng = upload đính kèm chưa dùng được, điền .env khi cần
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
@@ -130,6 +135,7 @@ services:
       SPRING_PROFILES_ACTIVE: docker
       JWKS_URI: http://identity-service:8081/.well-known/jwks.json
       COMMUNITY_GRPC_TARGET: dns:///community-service:9092
+      MESSAGING_GRPC_TARGET: dns:///messaging-service:9093
       GRPC_TOKEN_PRESENCE: ${GRPC_TOKEN_PRESENCE:?}
       REDIS_HOST: redis
       RABBITMQ_HOST: rabbitmq
@@ -141,6 +147,7 @@ services:
       redis: { condition: service_healthy }
       identity-service: { condition: service_healthy }
       community-service: { condition: service_healthy }
+      messaging-service: { condition: service_healthy }
     deploy:
       resources:
         limits: { memory: 512m }

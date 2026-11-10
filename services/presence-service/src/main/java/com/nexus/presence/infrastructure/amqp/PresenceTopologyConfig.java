@@ -8,7 +8,7 @@ import org.springframework.amqp.core.Declarables;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-// Khai báo exchange community.events, realtime.events, presence.events và hai queue quorum cùng DLQ
+// Khai báo exchange community/realtime/messaging/presence.events và ba queue quorum cùng DLQ
 @Configuration
 public class PresenceTopologyConfig {
 
@@ -32,6 +32,14 @@ public class PresenceTopologyConfig {
                 "member.kicked",
                 "member.banned",
                 "server.deleted")
+            .getDeclarables());
+    all.addAll(EventTopology.exchange("messaging.events").getDeclarables());
+    all.addAll(
+        EventTopology.consumerQueue(
+                "presence.messaging.events",
+                "messaging.events",
+                "friend-request.accepted",
+                "friend.removed")
             .getDeclarables());
     return new Declarables(all);
   }

@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicReference;
 // Máy chủ gRPC Netty cổng ngẫu nhiên giả Messaging và Community, đáp theo user, kênh, server
 public final class FakeAccessServer implements AutoCloseable {
 
+  private static final UUID DM = new UUID(0, 0);
   private final Map<String, UUID> views = new ConcurrentHashMap<>();
   private final Set<String> members = ConcurrentHashMap.newKeySet();
   private final AtomicReference<String> lastToken = new AtomicReference<>();
@@ -70,6 +71,11 @@ public final class FakeAccessServer implements AutoCloseable {
   // Cho user xem được kênh thuộc server cho trước
   public void allowView(UUID userId, UUID channelId, UUID serverId) {
     views.put(userId + ":" + channelId, serverId);
+  }
+
+  // Cho user xem được kênh DM (can_view, is_dm, server_id rỗng)
+  public void allowDm(UUID userId, UUID channelId) {
+    views.put(userId + ":" + channelId, DM);
   }
 
   // Cho user là member của server
@@ -143,7 +149,9 @@ public final class FakeAccessServer implements AutoCloseable {
       UUID serverId = views.get(request.getUserId() + ":" + request.getChannelId());
       CheckChannelAccessResponse.Builder response =
           CheckChannelAccessResponse.newBuilder().setCanView(serverId != null);
-      if (serverId != null) {
+      if (DM.equals(serverId)) {
+        response.setIsDm(true);
+      } else if (serverId != null) {
         response.setServerId(serverId.toString());
       }
       observer.onNext(response.build());

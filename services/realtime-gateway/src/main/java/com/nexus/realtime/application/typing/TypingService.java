@@ -24,7 +24,7 @@ public class TypingService {
     this.clock = clock;
   }
 
-  // Nhận khi user đang subscribe kênh và chưa gõ trong 3 s gần nhất, ngược lại bỏ lặng lẽ
+  // Nhận khi đang subscribe kênh, chưa gõ 3 s gần nhất (ponytail: DM hết bạn vẫn gõ, chỉ hiển thị)
   public boolean accept(UUID userId, UUID channelId) {
     long now = clock.millis();
     Key key = new Key(userId, channelId);

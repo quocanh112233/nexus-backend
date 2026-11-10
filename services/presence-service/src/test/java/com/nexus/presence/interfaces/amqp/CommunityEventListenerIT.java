@@ -69,7 +69,7 @@ class CommunityEventListenerIT {
     UUID user = UUID.randomUUID();
     UUID s1 = UUID.randomUUID();
     UUID s2 = UUID.randomUUID();
-    projection.load(user, Set.of(s1, s2), projection.revision(user));
+    projection.load(user, Set.of(s1, s2), Set.of(), projection.revision(user));
 
     publish("member.banned", "MemberBanned", Map.of("serverId", s1, "userId", user));
 
@@ -85,7 +85,7 @@ class CommunityEventListenerIT {
   void unknownEventAckedAndIgnored() {
     UUID user = UUID.randomUUID();
     UUID server = UUID.randomUUID();
-    projection.load(user, Set.of(server), projection.revision(user));
+    projection.load(user, Set.of(server), Set.of(), projection.revision(user));
 
     rabbit.invoke(
         operations -> {

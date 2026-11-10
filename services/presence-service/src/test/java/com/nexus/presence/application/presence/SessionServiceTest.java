@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.nexus.presence.application.relation.EnsureLoadedUseCase;
 import com.nexus.presence.application.relation.FakeRelationshipProjection;
+import com.nexus.presence.application.relation.FriendListLoader;
 import com.nexus.presence.application.relation.RelationUnavailableException;
 import java.time.Clock;
 import java.time.Instant;
@@ -22,6 +23,8 @@ class SessionServiceTest {
   private final FakeRelationshipProjection projection = new FakeRelationshipProjection();
   private final List<PresenceChange> published = new ArrayList<>();
   private boolean loaderDown = false;
+  private boolean friendLoaderDown = false;
+  private Set<UUID> friendsFromGrpc = Set.of();
   private final EnsureLoadedUseCase ensure =
       new EnsureLoadedUseCase(
           projection,
@@ -30,7 +33,8 @@ class SessionServiceTest {
               throw new RelationUnavailableException("down", null);
             }
             return Set.of();
-          });
+          },
+          ensureFriendLoader());
   private final SessionService service =
       new SessionService(
           store, new PresenceChangeNotifier(ensure, projection, published::add, Clock.systemUTC()));
@@ -107,7 +111,7 @@ class SessionServiceTest {
   void serverIdsFromProjectionAreInPayload() {
     UUID a = UUID.randomUUID();
     UUID b = UUID.randomUUID();
-    projection.load(user, Set.of(a, b), projection.revision(user));
+    projection.load(user, Set.of(a, b), Set.of(), projection.revision(user));
 
     service.connect("s1", user, "i", t0);
 
@@ -148,7 +152,7 @@ class SessionServiceTest {
         new SessionService(
             store,
             new PresenceChangeNotifier(
-                new EnsureLoadedUseCase(broken, id -> Set.of()),
+                new EnsureLoadedUseCase(broken, id -> Set.of(), id -> Set.of()),
                 broken,
                 published::add,
                 Clock.systemUTC()));
@@ -157,5 +161,59 @@ class SessionServiceTest {
 
     assertThat(published).hasSize(1);
     assertThat(published.get(0).serverIds()).isEmpty();
+  }
+
+  // Kịch bản: user có bạn trong Messaging nhưng chưa được nạp projection
+  // Input: loader bạn trả {f}, connect lần đầu
+  // Output: payload ONLINE có friendIds đúng {f}
+  @Test
+  void friendIdsFromBulkLoadAreInPayload() {
+    UUID f = UUID.randomUUID();
+    friendsFromGrpc = Set.of(f);
+
+    service.connect("s1", user, "i", t0);
+
+    assertThat(published.get(0).friendIds()).containsExactly(f);
+  }
+
+  // Kịch bản: gRPC Messaging lỗi khi nạp bù, Redis còn tập bạn cũ từ lần nạp đã hết hạn
+  // Input: projection chưa loaded nhưng friendsOf trả {stale}, loader bạn ném lỗi, connect
+  // Output: vẫn publish ONLINE nhưng friendIds rỗng (không phát tới người nhận chưa xác minh)
+  @Test
+  void friendLoaderFailurePublishesWithoutFriendRecipients() {
+    UUID stale = UUID.randomUUID();
+    FakeRelationshipProjection expired =
+        new FakeRelationshipProjection() {
+          // Mô phỏng tập bạn còn sót sau khi cờ loaded hết hạn
+          @Override
+          public Set<UUID> friendsOf(UUID userId) {
+            return Set.of(stale);
+          }
+        };
+    friendLoaderDown = true;
+    SessionService svc =
+        new SessionService(
+            store,
+            new PresenceChangeNotifier(
+                new EnsureLoadedUseCase(expired, id -> Set.of(), ensureFriendLoader()),
+                expired,
+                published::add,
+                Clock.systemUTC()));
+
+    svc.connect("s1", user, "i", t0);
+
+    assertThat(published).hasSize(1);
+    assertThat(published.get(0).status()).isEqualTo("ONLINE");
+    assertThat(published.get(0).friendIds()).isEmpty();
+  }
+
+  // Loader bạn giả: ném lỗi khi friendLoaderDown, ngược lại trả friendsFromGrpc
+  private FriendListLoader ensureFriendLoader() {
+    return id -> {
+      if (friendLoaderDown) {
+        throw new RelationUnavailableException("down", null);
+      }
+      return friendsFromGrpc;
+    };
   }
 }

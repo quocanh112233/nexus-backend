@@ -6,7 +6,6 @@ import static org.mockito.Mockito.mock;
 
 import com.nexus.messaging.application.port.AttachmentVerifier;
 import com.nexus.messaging.application.port.ChannelAccess;
-import com.nexus.messaging.application.port.ChannelPermission;
 import com.nexus.messaging.application.port.ChannelPermissionChecker;
 import com.nexus.messaging.application.port.DomainEventPublisher;
 import com.nexus.messaging.application.port.UploadSigner;
@@ -20,6 +19,7 @@ import com.nexus.messaging.domain.message.MessageId;
 import com.nexus.messaging.domain.message.MessageRepository;
 import com.nexus.messaging.domain.message.Nonce;
 import com.nexus.messaging.domain.shared.ChannelId;
+import com.nexus.messaging.domain.shared.ChannelPermission;
 import com.nexus.messaging.domain.shared.DomainEvent;
 import com.nexus.messaging.domain.shared.DomainValidationException;
 import com.nexus.messaging.domain.shared.UserId;
@@ -71,6 +71,23 @@ class SendMessageUseCaseTest {
     assertThat(messages.byId).isEmpty();
     assertThat(events).isEmpty();
     assertThat(refs.saved).isEmpty();
+  }
+
+  // Kịch bản: gửi tin vào kênh DM
+  // Input: ChannelAccess(null, {VIEW_CHANNEL, SEND_MESSAGES}) như DmAwareChannelPermissionChecker
+  // Output: lưu tin, không upsertServerChannel, MessageCreated có serverId null
+  @Test
+  void dmMessageSkipsServerChannelRefAndHasNullServerId() {
+    access =
+        new ChannelAccess(
+            null, EnumSet.of(ChannelPermission.VIEW_CHANNEL, ChannelPermission.SEND_MESSAGES));
+
+    useCase.execute(command("hi", null, null));
+
+    assertThat(messages.byId).hasSize(1);
+    assertThat(refs.saved).isEmpty();
+    assertThat(events).singleElement().isInstanceOf(MessageCreated.class);
+    assertThat(((MessageCreated) events.get(0)).serverId()).isNull();
   }
 
   // Kịch bản: user không thấy kênh
@@ -291,6 +308,10 @@ class SendMessageUseCaseTest {
 
     // Không dùng trong test này
     @Override
+    public void upsertDmChannel(ChannelId channelId) {}
+
+    // Không dùng trong test này
+    @Override
     public void tombstoneChannel(ChannelId channelId, UUID serverId, Instant at) {}
 
     // Không dùng trong test này
@@ -300,6 +321,12 @@ class SendMessageUseCaseTest {
     // Luôn trả chưa xóa
     @Override
     public boolean isDeleted(ChannelId channelId) {
+      return false;
+    }
+
+    // Không dùng trong test này
+    @Override
+    public boolean isDm(ChannelId channelId) {
       return false;
     }
   }

@@ -129,6 +129,33 @@ class StompAuthIT {
     assertThat(ACCESS.lastToken()).isEqualTo("dummy-realtime");
   }
 
+  // Kịch bản: participant của DM subscribe kênh DM
+  // Input: SUBSCRIBE /topic/channels/{dmId} khi Messaging trả can_view=true, is_dm=true
+  // Output: registry có subscription của user với serverId null
+  @Test
+  void subscribeDmChannelStoresNullServerId() throws Exception {
+    ACCESS.allowDm(userId, channelId);
+    Probe probe = connectOk(userId);
+    String destination = "/topic/channels/" + channelId;
+    subscribe(probe, destination);
+    await().atMost(5, TimeUnit.SECONDS).until(() -> !registry.byDestination(destination).isEmpty());
+    assertThat(registry.byDestination(destination))
+        .singleElement()
+        .satisfies(s -> assertThat(s.serverId()).isNull());
+  }
+
+  // Kịch bản: người ngoài subscribe kênh DM của người khác
+  // Input: SUBSCRIBE /topic/channels/{dmId} khi Messaging trả can_view=false
+  // Output: nhận ERROR PERMISSION_DENIED, registry rỗng
+  @Test
+  void subscribeDmChannelAsOutsiderIsDenied() throws Exception {
+    ACCESS.allowDm(UUID.randomUUID(), channelId);
+    Probe probe = connectOk(userId);
+    subscribe(probe, "/topic/channels/" + channelId);
+    assertThat(probe.error.get(5, TimeUnit.SECONDS)).isEqualTo("PERMISSION_DENIED");
+    assertThat(registry.byUser(userId)).isEmpty();
+  }
+
   // Kịch bản: user không xem được kênh
   // Input: SUBSCRIBE /topic/channels/{id} khi Messaging trả can_view=false
   // Output: nhận ERROR PERMISSION_DENIED, registry rỗng

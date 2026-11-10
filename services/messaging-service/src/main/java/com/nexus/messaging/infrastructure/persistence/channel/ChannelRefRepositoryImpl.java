@@ -23,6 +23,12 @@ class ChannelRefRepositoryImpl implements ChannelRefRepository {
     dao.upsertServerChannel(channelId.value(), serverId);
   }
 
+  // Ghi kênh DM nếu chưa có
+  @Override
+  public void upsertDmChannel(ChannelId channelId) {
+    dao.upsertDmChannel(channelId.value());
+  }
+
   // Đánh dấu kênh đã xóa
   @Override
   public void tombstoneChannel(ChannelId channelId, UUID serverId, Instant at) {
@@ -39,5 +45,11 @@ class ChannelRefRepositoryImpl implements ChannelRefRepository {
   @Override
   public boolean isDeleted(ChannelId channelId) {
     return dao.isDeleted(channelId.value());
+  }
+
+  // Kênh có phải DM không
+  @Override
+  public boolean isDm(ChannelId channelId) {
+    return dao.isDm(channelId.value());
   }
 }

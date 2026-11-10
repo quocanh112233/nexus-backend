@@ -72,10 +72,12 @@ app:
     alive-ttl: 60s
     dead-instance-interval: 15s
   grpc:
-    # Token của presence-service khi gọi Community, lấy từ env
+    # Token của presence-service khi gọi Community và Messaging, lấy từ env
     service-token: ${GRPC_TOKEN_PRESENCE:}
     community:
       target: ${COMMUNITY_GRPC_TARGET:dns:///localhost:9092}
+    messaging:
+      target: ${MESSAGING_GRPC_TARGET:dns:///localhost:9093}
 
 logging:
   structured:

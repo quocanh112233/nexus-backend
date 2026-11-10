@@ -148,8 +148,8 @@ Kết quả: `messaging_svc` không đọc được `community.*` (thử `SELECT
 | `CLOUDINARY_UPLOAD_PRESET_ATTACHMENT` | messaging (map vào `CLOUDINARY_UPLOAD_PRESET`) | Tên upload preset *signed* cho đính kèm (≤ 25 MB) |
 | `CLOUDINARY_FOLDER_ROOT` | identity, messaging | Thư mục gốc, ví dụ `nexus-dev` (local) / `nexus` (demo) để tách dữ liệu khi dùng chung 1 account |
 | `GRPC_TOKEN_REALTIME` | realtime-gateway (gửi), community + messaging (kiểm) | Token gRPC không có user context; allowlist: Community `CheckServerMembership`, Messaging `CheckChannelAccess` |
-| `GRPC_TOKEN_PRESENCE` | presence-service (gửi), community (kiểm) | Allowlist: Community `ListServerIdsForUser` |
-| `GRPC_TOKEN_MESSAGING` | messaging-service (gửi), community (kiểm) | Allowlist: Community `CheckChannelPermissions`; ba token phải khác nhau (community từ chối khi trùng) |
+| `GRPC_TOKEN_PRESENCE` | presence-service (gửi), community + messaging (kiểm) | Allowlist: Community `ListServerIdsForUser`, Messaging `SocialService/ListFriendIds` |
+| `GRPC_TOKEN_MESSAGING` | messaging-service (gửi), community + identity (kiểm) | Allowlist: Community `CheckChannelPermissions`, Identity `UserService/GetUser`; ba token phải khác nhau (community từ chối khi trùng) |
 | `COMMUNITY_GRPC_TARGET`, `MESSAGING_GRPC_TARGET`, `IDENTITY_GRPC_TARGET` | service gọi gRPC | Dạng `dns:///community-service:9092` |
 | `REDIS_HOST` | api-gateway (rate limit) | `redis` trong compose |
 | `REDIS_PORT` | compose | Cổng publish Redis trên host (mặc định 6379), không phải cấu hình của gateway |

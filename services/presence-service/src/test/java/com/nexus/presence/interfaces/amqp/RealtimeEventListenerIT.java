@@ -80,7 +80,7 @@ class RealtimeEventListenerIT {
   @Test
   void sessionConnectedPublishesOnlineToPresenceEvents() {
     UUID server = UUID.randomUUID();
-    projection.load(user, Set.of(server), projection.revision(user));
+    projection.load(user, Set.of(server), Set.of(), projection.revision(user));
 
     connected("s1");
 

@@ -1,7 +1,6 @@
 package com.nexus.messaging.application.message;
 
 import com.nexus.messaging.application.port.ChannelAccess;
-import com.nexus.messaging.application.port.ChannelPermission;
 import com.nexus.messaging.application.port.ChannelPermissionChecker;
 import com.nexus.messaging.application.port.DomainEventPublisher;
 import com.nexus.messaging.application.shared.MessageNotFoundException;
@@ -10,6 +9,7 @@ import com.nexus.messaging.domain.message.Message;
 import com.nexus.messaging.domain.message.MessageId;
 import com.nexus.messaging.domain.message.MessageRepository;
 import com.nexus.messaging.domain.shared.ChannelId;
+import com.nexus.messaging.domain.shared.ChannelPermission;
 import com.nexus.messaging.domain.shared.DomainEvent;
 import com.nexus.messaging.domain.shared.UserId;
 import java.time.Clock;

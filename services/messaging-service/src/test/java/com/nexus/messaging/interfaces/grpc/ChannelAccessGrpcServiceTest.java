@@ -7,12 +7,12 @@ import com.nexus.common.grpc.AuthServerInterceptor;
 import com.nexus.common.grpc.GrpcAuth;
 import com.nexus.common.grpc.ServiceCaller;
 import com.nexus.messaging.application.port.ChannelAccess;
-import com.nexus.messaging.application.port.ChannelPermission;
 import com.nexus.messaging.application.port.ChannelPermissionChecker;
 import com.nexus.messaging.application.shared.ChannelNotFoundException;
 import com.nexus.messaging.application.shared.DependencyUnavailableException;
 import com.nexus.messaging.domain.channel.ChannelRefRepository;
 import com.nexus.messaging.domain.shared.ChannelId;
+import com.nexus.messaging.domain.shared.ChannelPermission;
 import com.nexus.messaging.infrastructure.persistence.channel.TombstoneChannelPermissionChecker;
 import com.nexus.proto.messaging.v1.ChannelAccessServiceGrpc;
 import com.nexus.proto.messaging.v1.CheckChannelAccessRequest;
@@ -120,6 +120,23 @@ class ChannelAccessGrpcServiceTest {
     assertThat(response.getCanView()).isTrue();
     assertThat(response.getServerId()).isEqualTo(SERVER.toString());
     assertThat(response.getIsDm()).isFalse();
+  }
+
+  // Kịch bản: người tham gia DM, kể cả khi đã hủy kết bạn vẫn xem được
+  // Input: checker trả ChannelAccess(null, {VIEW_CHANNEL, READ_MESSAGE_HISTORY})
+  // Output: can_view true, is_dm true, server_id rỗng
+  @Test
+  void dmParticipantCanViewAsDm() throws Exception {
+    CheckChannelAccessResponse response =
+        stub((u, c) ->
+                new ChannelAccess(
+                    null,
+                    Set.of(ChannelPermission.VIEW_CHANNEL, ChannelPermission.READ_MESSAGE_HISTORY)))
+            .checkChannelAccess(request());
+
+    assertThat(response.getCanView()).isTrue();
+    assertThat(response.getIsDm()).isTrue();
+    assertThat(response.getServerId()).isEmpty();
   }
 
   // Kịch bản: user có quyền khác nhưng thiếu VIEW_CHANNEL
@@ -242,6 +259,10 @@ class ChannelAccessGrpcServiceTest {
 
     // Không dùng trong test này
     @Override
+    public void upsertDmChannel(ChannelId channelId) {}
+
+    // Không dùng trong test này
+    @Override
     public void tombstoneChannel(ChannelId channelId, UUID serverId, Instant at) {}
 
     // Không dùng trong test này
@@ -252,6 +273,12 @@ class ChannelAccessGrpcServiceTest {
     @Override
     public boolean isDeleted(ChannelId channelId) {
       return true;
+    }
+
+    // Không dùng trong test này
+    @Override
+    public boolean isDm(ChannelId channelId) {
+      return false;
     }
   }
 }

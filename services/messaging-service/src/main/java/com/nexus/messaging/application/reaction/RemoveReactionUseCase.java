@@ -1,7 +1,6 @@
 package com.nexus.messaging.application.reaction;
 
 import com.nexus.messaging.application.port.ChannelAccess;
-import com.nexus.messaging.application.port.ChannelPermission;
 import com.nexus.messaging.application.port.ChannelPermissionChecker;
 import com.nexus.messaging.application.port.DomainEventPublisher;
 import com.nexus.messaging.application.shared.MessageNotFoundException;
@@ -11,6 +10,7 @@ import com.nexus.messaging.domain.reaction.Emoji;
 import com.nexus.messaging.domain.reaction.ReactionRemoved;
 import com.nexus.messaging.domain.reaction.ReactionRepository;
 import com.nexus.messaging.domain.shared.ChannelId;
+import com.nexus.messaging.domain.shared.ChannelPermission;
 import com.nexus.messaging.domain.shared.UserId;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

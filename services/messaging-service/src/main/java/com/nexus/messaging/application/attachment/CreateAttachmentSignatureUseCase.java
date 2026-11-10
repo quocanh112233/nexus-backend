@@ -1,10 +1,10 @@
 package com.nexus.messaging.application.attachment;
 
-import com.nexus.messaging.application.port.ChannelPermission;
 import com.nexus.messaging.application.port.ChannelPermissionChecker;
 import com.nexus.messaging.application.port.UploadSignature;
 import com.nexus.messaging.application.port.UploadSigner;
 import com.nexus.messaging.domain.shared.ChannelId;
+import com.nexus.messaging.domain.shared.ChannelPermission;
 import com.nexus.messaging.domain.shared.UserId;
 import java.time.Clock;
 import org.springframework.stereotype.Service;

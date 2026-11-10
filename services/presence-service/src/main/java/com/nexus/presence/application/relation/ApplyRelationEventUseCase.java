@@ -4,7 +4,7 @@ import com.nexus.presence.domain.relation.RelationshipProjection;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
-// Áp event member và server của community vào projection, event lạ bị bỏ qua
+// Áp event member/server của community và bạn bè của messaging vào projection, event lạ bỏ qua
 @Service
 public class ApplyRelationEventUseCase {
 
@@ -23,6 +23,16 @@ public class ApplyRelationEventUseCase {
           projection.removeServer(userId, serverId);
       case "ServerDeleted" ->
           projection.deleteServer(serverId).forEach(m -> projection.removeServer(m, serverId));
+      default -> {}
+    }
+  }
+
+  // FriendRequestAccepted thì addFriend, FriendRemoved thì removeFriend cả hai phía, loại lạ bỏ qua
+  public void executeFriend(String eventType, UUID a, UUID b) {
+    // ponytail: event đảo thứ tự chỉ lệch tới khi loaded hết hạn, thêm version vào payload nếu cần
+    switch (eventType) {
+      case "FriendRequestAccepted" -> projection.addFriend(a, b);
+      case "FriendRemoved" -> projection.removeFriend(a, b);
       default -> {}
     }
   }

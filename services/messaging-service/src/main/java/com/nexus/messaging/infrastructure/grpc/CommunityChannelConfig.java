@@ -3,7 +3,10 @@ package com.nexus.messaging.infrastructure.grpc;
 import com.nexus.common.grpc.ClientMetadataInterceptor;
 import com.nexus.messaging.application.port.ChannelPermissionChecker;
 import com.nexus.messaging.domain.channel.ChannelRefRepository;
+import com.nexus.messaging.domain.social.DmChannelRepository;
+import com.nexus.messaging.domain.social.FriendshipRepository;
 import com.nexus.messaging.infrastructure.cache.CachingChannelPermissionChecker;
+import com.nexus.messaging.infrastructure.persistence.channel.DmAwareChannelPermissionChecker;
 import com.nexus.messaging.infrastructure.persistence.channel.TombstoneChannelPermissionChecker;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
@@ -139,10 +142,10 @@ public class CommunityChannelConfig {
     return breaker;
   }
 
-  // Checker không cache (tombstone bọc gRPC) chỉ cho ChannelAccess RPC, luôn hỏi Community
+  // Checker kênh server không cache: tombstone bọc gRPC tới Community
   @Bean
-  ChannelPermissionChecker uncachedChannelPermissionChecker(
-      ManagedChannel communityChannel,
+  TombstoneChannelPermissionChecker serverChannelPermissionChecker(
+      @Qualifier("communityChannel") ManagedChannel communityChannel,
       CircuitBreaker communityCircuitBreaker,
       ChannelRefRepository channelRefs,
       @Value("${app.grpc.community.deadline:300ms}") Duration deadline) {
@@ -151,14 +154,31 @@ public class CommunityChannelConfig {
         new GrpcChannelPermissionChecker(communityChannel, communityCircuitBreaker, deadline));
   }
 
-  // Checker mặc định cho REST và message: cache Redis bọc checker không cache
+  // Checker không cache cho ChannelAccess RPC: DM tính tại chỗ, kênh server luôn hỏi Community
+  @Bean
+  ChannelPermissionChecker uncachedChannelPermissionChecker(
+      TombstoneChannelPermissionChecker serverChecker,
+      ChannelRefRepository channelRefs,
+      DmChannelRepository dms,
+      FriendshipRepository friendships) {
+    return new DmAwareChannelPermissionChecker(channelRefs, dms, friendships, serverChecker);
+  }
+
+  // Checker mặc định cho REST và message: DM tính trước cache, kênh server qua cache Redis
   @Bean
   @Primary
   ChannelPermissionChecker channelPermissionChecker(
-      @Qualifier("uncachedChannelPermissionChecker") ChannelPermissionChecker uncached,
+      TombstoneChannelPermissionChecker serverChecker,
+      ChannelRefRepository channelRefs,
+      DmChannelRepository dms,
+      FriendshipRepository friendships,
       StringRedisTemplate redis,
       MeterRegistry registry,
       @Value("${app.cache.permission-ttl:60s}") Duration ttl) {
-    return new CachingChannelPermissionChecker(uncached, redis, registry, ttl);
+    return new DmAwareChannelPermissionChecker(
+        channelRefs,
+        dms,
+        friendships,
+        new CachingChannelPermissionChecker(serverChecker, redis, registry, ttl));
   }
 }

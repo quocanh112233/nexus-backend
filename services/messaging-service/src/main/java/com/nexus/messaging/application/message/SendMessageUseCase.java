@@ -3,7 +3,6 @@ package com.nexus.messaging.application.message;
 import com.nexus.messaging.application.attachment.AttachmentInput;
 import com.nexus.messaging.application.port.AttachmentVerifier;
 import com.nexus.messaging.application.port.ChannelAccess;
-import com.nexus.messaging.application.port.ChannelPermission;
 import com.nexus.messaging.application.port.ChannelPermissionChecker;
 import com.nexus.messaging.application.port.DomainEventPublisher;
 import com.nexus.messaging.application.port.UploadSigner;
@@ -15,6 +14,7 @@ import com.nexus.messaging.domain.message.Message;
 import com.nexus.messaging.domain.message.MessageContent;
 import com.nexus.messaging.domain.message.MessageId;
 import com.nexus.messaging.domain.message.MessageRepository;
+import com.nexus.messaging.domain.shared.ChannelPermission;
 import com.nexus.messaging.domain.shared.DomainValidationException;
 import com.nexus.messaging.domain.shared.UserId;
 import java.time.Clock;
@@ -27,7 +27,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-// Use case gửi tin vào kênh server, idempotent theo nonce của tác giả
+// Use case gửi tin vào kênh server hoặc DM, idempotent theo nonce của tác giả
 @Service
 public class SendMessageUseCase {
 
@@ -62,7 +62,7 @@ public class SendMessageUseCase {
   // Kết quả gửi: created=false khi nonce trùng và trả lại tin cũ
   public record SendResult(MessageView message, boolean created) {}
 
-  // Kiểm quyền, tra nonce, xác minh đính kèm, mention, reply, lưu tin rồi phát MessageCreated
+  // Kiểm quyền, tra nonce, đính kèm, mention, reply, ghi ref kênh server, lưu tin, phát event
   @Transactional
   public SendResult execute(SendMessageCommand cmd) {
     ChannelAccess access = checker.check(cmd.authorId(), cmd.channelId());
@@ -82,7 +82,9 @@ public class SendMessageUseCase {
     MessageContent content = new MessageContent(text);
     Set<UserId> mentions = MentionParser.parse(text);
     requireReplyInSameChannel(cmd);
-    channelRefRepository.upsertServerChannel(cmd.channelId(), access.serverId());
+    if (!access.isDm()) {
+      channelRefRepository.upsertServerChannel(cmd.channelId(), access.serverId());
+    }
     Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
     Message message =
         Message.create(

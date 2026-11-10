@@ -10,6 +10,9 @@ public interface ChannelRefRepository {
   // Ghi kênh server nếu chưa có, đã có thì giữ nguyên
   void upsertServerChannel(ChannelId channelId, UUID serverId);
 
+  // Ghi kênh DM (kind DM, không server) nếu chưa có, chạy trong transaction của nơi gọi
+  void upsertDmChannel(ChannelId channelId);
+
   // Đánh dấu kênh đã xóa, tạo dòng nếu chưa có và giữ thời điểm xóa đầu tiên
   void tombstoneChannel(ChannelId channelId, UUID serverId, Instant at);
 
@@ -18,4 +21,7 @@ public interface ChannelRefRepository {
 
   // True nếu kênh đã bị đánh dấu xóa
   boolean isDeleted(ChannelId channelId);
+
+  // True nếu kênh được ghi là DM
+  boolean isDm(ChannelId channelId);
 }

@@ -28,7 +28,7 @@ public class QueryPresenceUseCase {
     this.store = store;
   }
 
-  // Giữ target được thấy theo thứ tự; viewer lỗi thì rỗng; không có server thì chỉ thấy mình
+  // Giữ target được thấy theo thứ tự; viewer lỗi thì rỗng; không server lẫn bạn thì chỉ thấy mình
   public Map<UUID, PresenceStatus> execute(UUID viewer, List<UUID> targets) {
     Map<UUID, PresenceStatus> result = new LinkedHashMap<>();
     try {
@@ -36,12 +36,13 @@ public class QueryPresenceUseCase {
     } catch (RelationUnavailableException e) {
       return result;
     }
-    boolean noServers = projection.serversOf(viewer).isEmpty();
+    boolean noRelations =
+        projection.serversOf(viewer).isEmpty() && projection.friendsOf(viewer).isEmpty();
     boolean loaderDown = false;
     // ponytail: target lạ chưa nạp tạo khóa loaded 5 phút (tập rỗng), chặn bởi rate limit gateway
     for (UUID target : targets) {
       if (!target.equals(viewer)) {
-        if (noServers || (loaderDown && !projection.isLoaded(target))) {
+        if (noRelations || (loaderDown && !projection.isLoaded(target))) {
           continue;
         }
         try {

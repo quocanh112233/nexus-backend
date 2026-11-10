@@ -41,10 +41,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.grpc.server.lifecycle.GrpcServerLifecycle;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 
 // Kiểm tra UserService qua gRPC thật, xác thực JWT của Identity và Postgres thật
 @SpringBootTest
 class UserGrpcServiceIT extends IdentityIntegrationTest {
+
+  private static final String MESSAGING_TOKEN = "it-messaging-token";
 
   @Autowired private UserRepository users;
   @Autowired private TokenIssuer tokenIssuer;
@@ -205,6 +209,93 @@ class UserGrpcServiceIT extends IdentityIntegrationTest {
         .isInstanceOfSatisfying(
             StatusRuntimeException.class,
             e -> assertThat(e.getStatus().getCode()).isEqualTo(Status.Code.UNAUTHENTICATED));
+  }
+
+  // Kịch bản: messaging-service gọi GetUser bằng service token hợp lệ
+  // Input: GetUser kèm x-service-token của caller messaging-service, không có Bearer
+  // Output: OK, trả đúng user_id
+  @Test
+  void serviceTokenCanCallGetUser() {
+    User saved = users.save(newUser("Ivy", null));
+    channel = serviceChannel(MESSAGING_TOKEN);
+
+    var user =
+        UserServiceGrpc.newBlockingStub(channel)
+            .getUser(GetUserRequest.newBuilder().setUserId(id(saved)).build())
+            .getUser();
+
+    assertThat(user.getUserId()).isEqualTo(id(saved));
+  }
+
+  // Kịch bản: service token sai
+  // Input: GetUser kèm x-service-token không thuộc caller nào
+  // Output: UNAUTHENTICATED
+  @Test
+  void wrongServiceTokenIsUnauthenticated() {
+    channel = serviceChannel("not-the-token");
+
+    assertThatThrownBy(
+            () ->
+                UserServiceGrpc.newBlockingStub(channel)
+                    .getUser(
+                        GetUserRequest.newBuilder()
+                            .setUserId(UUID.randomUUID().toString())
+                            .build()))
+        .isInstanceOfSatisfying(
+            StatusRuntimeException.class,
+            e -> assertThat(e.getStatus().getCode()).isEqualTo(Status.Code.UNAUTHENTICATED));
+  }
+
+  // Kịch bản: caller hợp lệ gọi RPC ngoài allowlist
+  // Input: BatchGetUsers kèm service token đúng của messaging-service
+  // Output: PERMISSION_DENIED
+  @Test
+  void serviceTokenCannotCallOtherRpc() {
+    channel = serviceChannel(MESSAGING_TOKEN);
+
+    assertThatThrownBy(
+            () ->
+                UserServiceGrpc.newBlockingStub(channel)
+                    .batchGetUsers(BatchGetUsersRequest.newBuilder().build()))
+        .isInstanceOfSatisfying(
+            StatusRuntimeException.class,
+            e -> assertThat(e.getStatus().getCode()).isEqualTo(Status.Code.PERMISSION_DENIED));
+  }
+
+  // Đặt token của caller messaging-service cho test (yml mặc định để trống)
+  @DynamicPropertySource
+  static void messagingCaller(DynamicPropertyRegistry registry) {
+    registry.add("app.grpc.service-callers.messaging-service.token", () -> MESSAGING_TOKEN);
+  }
+
+  // Kênh plaintext gắn header x-service-token, thay kênh cũ
+  private ManagedChannel serviceChannel(String token) {
+    if (channel != null) {
+      channel.shutdownNow();
+    }
+    return ManagedChannelBuilder.forAddress("localhost", grpcServer.getPort())
+        .usePlaintext()
+        .intercept(serviceTokenInterceptor(token))
+        .build();
+  }
+
+  // Interceptor client gắn header x-service-token vào mọi call
+  private static ClientInterceptor serviceTokenInterceptor(String value) {
+    return new ClientInterceptor() {
+      // Thêm header x-service-token trước khi gửi call
+      @Override
+      public <ReqT, RespT> ClientCall<ReqT, RespT> interceptCall(
+          MethodDescriptor<ReqT, RespT> method, CallOptions options, Channel next) {
+        return new SimpleForwardingClientCall<>(next.newCall(method, options)) {
+          // Gắn header rồi start call
+          @Override
+          public void start(Listener<RespT> listener, Metadata headers) {
+            headers.put(GrpcAuth.SERVICE_TOKEN, value);
+            super.start(listener, headers);
+          }
+        };
+      }
+    };
   }
 
   // Id user dạng chuỗi

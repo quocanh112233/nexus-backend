@@ -76,7 +76,43 @@ public final class EventRouter {
       ids(payload, "serverIds").forEach(id -> routes.add(topic("servers", id, data)));
       ids(payload, "friendIds").forEach(id -> routes.add(new Route(USER_QUEUE, id, data)));
     }
+    social(type, payload, routes);
     return routes;
+  }
+
+  // Event bạn bè và DM giao vào /queue/events của người liên quan, data chỉ giữ các id
+  private static void social(String type, Map<String, Object> payload, List<Route> routes) {
+    switch (type) {
+      case "FriendRequestSent", "FriendRequestCanceled" ->
+          to(routes, request(payload), id(payload, "addresseeId"));
+      case "FriendRequestAccepted" ->
+          to(routes, request(payload), id(payload, "requesterId"), id(payload, "addresseeId"));
+      case "FriendRequestDeclined" -> to(routes, request(payload), id(payload, "requesterId"));
+      case "FriendRemoved" ->
+          to(
+              routes,
+              pick(payload, "userId", "friendId"),
+              id(payload, "userId"),
+              id(payload, "friendId"));
+      case "DmChannelCreated" ->
+          to(
+              routes,
+              pick(payload, "channelId", "participantIds"),
+              ids(payload, "participantIds").toArray(UUID[]::new));
+      default -> {}
+    }
+  }
+
+  // Phần data của event lời mời kết bạn: chỉ các id
+  private static Map<String, Object> request(Map<String, Object> payload) {
+    return pick(payload, "requestId", "requesterId", "addresseeId");
+  }
+
+  // Thêm route /queue/events với cùng data cho từng người nhận
+  private static void to(List<Route> routes, Map<String, Object> data, UUID... recipients) {
+    for (UUID recipient : recipients) {
+      routes.add(new Route(USER_QUEUE, recipient, data));
+    }
   }
 
   // Route tới topic của kênh hoặc server, data null thì giữ nguyên payload

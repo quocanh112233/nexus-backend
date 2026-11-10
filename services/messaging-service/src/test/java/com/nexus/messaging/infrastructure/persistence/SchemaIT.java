@@ -19,9 +19,9 @@ class SchemaIT extends MessagingIntegrationTest {
 
   @Autowired private JdbcTemplate jdbc;
 
-  // Kịch bản: Flyway migrate V1 vào schema messaging
+  // Kịch bản: Flyway migrate V1, V2 vào schema messaging
   // Input: Postgres trống, spring.flyway.schemas=messaging
-  // Output: đủ 7 bảng của P4 trong information_schema.tables
+  // Output: đủ 7 bảng của P4 và 3 bảng social trong information_schema.tables
   @Test
   void flywayCreatesAllTablesInMessagingSchema() {
     var tables =
@@ -37,7 +37,53 @@ class SchemaIT extends MessagingIntegrationTest {
             "message_mentions",
             "reactions",
             "outbox_event",
-            "processed_event");
+            "processed_event",
+            "friend_requests",
+            "friendships",
+            "dm_channels");
+  }
+
+  // Kịch bản: chống trùng lời mời chờ phải nằm ở index unique một phần theo cặp không thứ tự
+  // Input: pg_indexes.indexdef của ux_friend_requests_pending
+  // Output: UNIQUE, có LEAST, GREATEST và điều kiện status = 'PENDING'
+  @Test
+  void pendingFriendRequestIndexIsPartialUnique() {
+    String def =
+        jdbc.queryForObject(
+            "select indexdef from pg_indexes"
+                + " where schemaname = 'messaging' and indexname = 'ux_friend_requests_pending'",
+            String.class);
+
+    assertThat(def)
+        .contains("UNIQUE", "LEAST", "GREATEST")
+        .contains("WHERE (status = 'PENDING'::text)");
+  }
+
+  // Kịch bản: cặp bạn bè và DM chỉ lưu theo thứ tự low nhỏ hơn high
+  // Input: chèn friendships và dm_channels với low lớn hơn high
+  // Output: cả hai bị từ chối với DataIntegrityViolationException
+  @Test
+  void pairTablesRejectUnorderedPair() {
+    UUID low = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    UUID high = UUID.fromString("ffffffff-0000-0000-0000-000000000001");
+
+    assertThatThrownBy(
+            () ->
+                jdbc.update(
+                    "insert into messaging.friendships (user_low_id, user_high_id, created_at)"
+                        + " values (?, ?, now())",
+                    high,
+                    low))
+        .isInstanceOf(DataIntegrityViolationException.class);
+    assertThatThrownBy(
+            () ->
+                jdbc.update(
+                    "insert into messaging.dm_channels (id, user_low_id, user_high_id, created_at)"
+                        + " values (?, ?, ?, now())",
+                    UUID.randomUUID(),
+                    high,
+                    low))
+        .isInstanceOf(DataIntegrityViolationException.class);
   }
 
   // Kịch bản: phân trang keyset đi từ tin mới nhất nên index phải giảm dần theo id

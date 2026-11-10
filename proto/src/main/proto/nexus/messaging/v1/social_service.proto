@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package nexus.messaging.v1;
+
+option java_multiple_files = true;
+option java_package = "com.nexus.proto.messaging.v1";
+
+// Cung cấp danh sách bạn bè cho service cần dựng projection quan hệ, chỉ service caller được gọi
+service SocialService {
+  rpc ListFriendIds(ListFriendIdsRequest) returns (ListFriendIdsResponse);
+}
+
+// Yêu cầu liệt kê id bạn bè của một user
+message ListFriendIdsRequest {
+  string user_id = 1;
+}
+
+// Id bạn bè hai chiều của user, rỗng khi user lạ hoặc chưa có bạn
+message ListFriendIdsResponse {
+  repeated string friend_ids = 1;
+}

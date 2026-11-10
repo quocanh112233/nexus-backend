@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.nexus.messaging.application.port.ChannelAccess;
-import com.nexus.messaging.application.port.ChannelPermission;
 import com.nexus.messaging.application.port.ChannelPermissionChecker;
 import com.nexus.messaging.application.port.DomainEventPublisher;
 import com.nexus.messaging.application.shared.ChannelNotFoundException;
@@ -16,6 +15,7 @@ import com.nexus.messaging.domain.message.MessageId;
 import com.nexus.messaging.domain.message.MessageRepository;
 import com.nexus.messaging.domain.message.Nonce;
 import com.nexus.messaging.domain.shared.ChannelId;
+import com.nexus.messaging.domain.shared.ChannelPermission;
 import com.nexus.messaging.domain.shared.DomainEvent;
 import com.nexus.messaging.domain.shared.UserId;
 import java.time.Clock;
@@ -79,6 +79,21 @@ class EditMessageUseCaseTest {
     access = granted(ChannelPermission.MANAGE_MESSAGES);
 
     assertThatThrownBy(() -> useCase.execute(channel, m.id(), new UserId(UUID.randomUUID()), "x"))
+        .isInstanceOf(PermissionDeniedException.class);
+
+    assertThat(messages.byId.get(m.id()).content()).isEqualTo("old");
+    assertThat(events).isEmpty();
+  }
+
+  // Kịch bản: tác giả sửa tin trong DM khi không còn quyền gửi (đã hủy kết bạn)
+  // Input: ChannelAccess(null, {VIEW_CHANNEL}), editor là tác giả
+  // Output: PermissionDeniedException, nội dung không đổi, không event
+  @Test
+  void dmAuthorWithoutSendMessagesCannotEdit() {
+    Message m = messages.seed(channel, author, "old", 0, false);
+    access = new ChannelAccess(null, EnumSet.of(ChannelPermission.VIEW_CHANNEL));
+
+    assertThatThrownBy(() -> useCase.execute(channel, m.id(), author, "new"))
         .isInstanceOf(PermissionDeniedException.class);
 
     assertThat(messages.byId.get(m.id()).content()).isEqualTo("old");

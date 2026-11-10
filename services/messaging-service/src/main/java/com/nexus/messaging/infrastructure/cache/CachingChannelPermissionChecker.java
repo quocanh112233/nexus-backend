@@ -1,9 +1,9 @@
 package com.nexus.messaging.infrastructure.cache;
 
 import com.nexus.messaging.application.port.ChannelAccess;
-import com.nexus.messaging.application.port.ChannelPermission;
 import com.nexus.messaging.application.port.ChannelPermissionChecker;
 import com.nexus.messaging.domain.shared.ChannelId;
+import com.nexus.messaging.domain.shared.ChannelPermission;
 import com.nexus.messaging.domain.shared.UserId;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -66,8 +66,11 @@ public class CachingChannelPermissionChecker implements ChannelPermissionChecker
     }
   }
 
-  // Ghi entry kèm phiên bản hiện tại và TTL, Redis lỗi thì chỉ log
+  // Ghi entry kèm phiên bản hiện tại và TTL, bỏ qua kết quả DM, Redis lỗi thì chỉ log
   private void write(String key, ChannelAccess access) {
+    if (access.isDm()) {
+      return;
+    }
     try {
       // ponytail: cửa sổ stale cực nhỏ giữa delegate trả và đọc version, tối đa 60 s; cần thì Lua
       long version = version(access.serverId());

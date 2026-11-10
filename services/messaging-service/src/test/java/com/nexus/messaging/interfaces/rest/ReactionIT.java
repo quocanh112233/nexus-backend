@@ -6,8 +6,8 @@ import static org.mockito.Mockito.when;
 
 import com.nexus.messaging.MessagingIntegrationTest;
 import com.nexus.messaging.application.port.ChannelAccess;
-import com.nexus.messaging.application.port.ChannelPermission;
 import com.nexus.messaging.application.port.ChannelPermissionChecker;
+import com.nexus.messaging.domain.shared.ChannelPermission;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;

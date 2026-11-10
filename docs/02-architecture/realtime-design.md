@@ -12,7 +12,7 @@ File này mô tả `realtime-gateway`: cách client kết nối, cách event t�
 | Thành phần trong gateway | Vai trò |
 |-------------------------|---------|
 | STOMP endpoint `/ws` (Spring WebSocket) | Nhận kết nối |
-| `StompAuthChannelInterceptor` | `CONNECT`: verify JWT (JWKS), chỉ kiểm hạn token lúc này; `SUBSCRIBE`: gọi gRPC bằng `x-service-token` (không chuyển JWT user, vì lúc re-check token có thể đã hết hạn), lỗi hạ tầng → từ chối (fail-closed), từ chối → frame `ERROR` |
+| `StompAuthChannelInterceptor` | `CONNECT`: verify JWT (JWKS), chỉ kiểm hạn token lúc này; `SUBSCRIBE`: gọi gRPC bằng `x-service-token` (không chuyển JWT user, vì lúc re-check token có thể đã hết hạn), lỗi hạ tầng → từ chối (fail-closed), từ chối → frame `ERROR`; `/topic/channels/{dmId}` cho phép participant của DM (`is_dm=true`, không có phạm vi server) |
 | Simple broker trong bộ nhớ | Giữ map destination → session của **instance này** |
 | `SubscriptionRegistry` | Ghi `(sessionId, userId, subscriptionId, destination)` để thu hồi khi quyền đổi; là nguồn sự thật duy nhất cho `OutboundSubscriptionFilter` (chỉ frame của subscription còn trong sổ mới ra socket) |
 | `BrokerEventListener` | Nghe queue riêng `realtime-gateway.<instanceId>`, map event → destination, gọi `SimpMessagingTemplate` |
@@ -30,8 +30,8 @@ Giải pháp: **mỗi instance có một queue riêng** (`realtime-gateway.<inst
 | `ServerUpdated`, `ServerDeleted`, `Category*`, `ChannelCreated`, `ChannelUpdated`, `ChannelDeleted`, `ChannelPermissionsChanged`, `Role*`, `MemberJoined`, `MemberLeft`, `MemberKicked`, `MemberBanned`, `MemberUnbanned`, `MemberRolesChanged` | `/topic/servers/{serverId}` |
 | `MemberKicked`, `MemberBanned` | thêm `/user/queue/events` của người bị xử lý (UI bỏ server, thông báo) |
 | `PresenceChanged` | `/topic/servers/{serverId}` với mỗi `serverId` trong payload **và** `/user/queue/events` của mỗi `friendId` trong payload — không có topic presence chung (D-18) |
-| `FriendRequest*`, `FriendRemoved` | `/user/queue/events` của requester và addressee (hoặc 2 user) |
-| `DmChannelCreated` | `/user/queue/events` của 2 participant |
+| `FriendRequest*`, `FriendRemoved` | `/user/queue/events` của người liên quan (Sent/Canceled → addressee, Declined → requester, Accepted/Removed → cả hai); `data` chỉ gồm id: `requestId, requesterId, addresseeId` hoặc `userId, friendId` |
+| `DmChannelCreated` | `/user/queue/events` của 2 participant, `data`: `channelId, participantIds` |
 | `ReadStateUpdated`, `MentionCreated` | `/user/queue/events` của `userId` |
 | `MemberJoined` | thêm `/user/queue/events` của user vừa join (để UI thêm server) |
 | `ServerCreated` | `/user/queue/events` của owner (thiết bị khác) |
@@ -42,7 +42,7 @@ Ceiling (ghi rõ): mọi instance nhận mọi event → khi rất nhiều insta
 
 ## 4. Thu hồi quyền khi đang subscribe
 
-Mỗi subscription trong `SubscriptionRegistry` lưu `serverId` (topic server: từ destination; topic kênh: từ `server_id` của `CheckChannelAccess`; user queue: null). Phạm vi xử lý theo event, chỉ trên subscription của instance này:
+Mỗi subscription trong `SubscriptionRegistry` lưu `serverId` (topic server: từ destination; topic kênh: từ `server_id` của `CheckChannelAccess`; kênh DM và user queue: null — không bị thu hồi bởi event của server). Phạm vi xử lý theo event, chỉ trên subscription của instance này:
 
 | Event | Hành động |
 |-------|-----------|
@@ -52,14 +52,14 @@ Mỗi subscription trong `SubscriptionRegistry` lưu `serverId` (topic server: t
 | `RoleUpdated`, `RoleDeleted` | Re-check chỉ các topic kênh thuộc server đó (mọi user) |
 | `ChannelPermissionsChanged` | Re-check mọi subscription của kênh đó |
 | `ChannelDeleted` | Thu hồi vô điều kiện subscription của kênh đó |
-| `FriendRemoved` | P7 |
+| `FriendRemoved` | Không thu hồi: DM còn đọc được sau khi hủy kết bạn, chỉ chặn gửi (`403` ở REST) |
 
 Re-check gọi `CheckChannelAccess` bằng `x-service-token`; phía messaging RPC này dùng checker **không cache** (không qua cache `perm:*`) nên luôn đọc quyền mới từ Community. Không còn quyền (hoặc gRPC lỗi, fail-closed, lỗi đầu tiên thì thu hồi nốt phần còn lại không gọi nữa) → xóa khỏi sổ trước rồi gỡ khỏi broker và gửi `/user/queue/events` `{type: "SubscriptionRevoked", data: {destination, reason}}` với `reason` là `eventType` gây thu hồi. Trước RPC đầu tiên, mọi subscription cần re-check được **tạm dừng** trong sổ (bộ lọc outbound bỏ frame của chúng), chỉ mở lại sau khi kiểm quyền cho phép; từ chối hoặc lỗi bất ngờ thì thu hồi, nên không có cửa sổ vừa chờ RPC vừa còn nhận frame. Bộ lọc outbound dựa trên sổ nên frame đã xếp hàng của subscription vừa bị xóa không ra socket. Cửa sổ rò rỉ: vài trăm ms giữa lúc event được commit và lúc gateway nhận và xử lý, cộng khoảng TOCTOU nhỏ giữa kiểm quyền và ghi sổ (chấp nhận, ghi trong rủi ro).
 
 ## 5. Typing (P-06)
 
 1. Client SEND `/app/channels/{channelId}/typing` (throttle 3 s ở client, server chặn thêm).
-2. Gateway kiểm tra quyền gửi bằng cache kết quả `CheckChannelAccess` của subscription (không gọi gRPC mỗi lần).
+2. Gateway chỉ kiểm tra user đang có subscription tới kênh đó (quyền đã kiểm lúc SUBSCRIBE, không gọi gRPC mỗi lần), không kiểm lại quyền gửi: bạn cũ trong DM vẫn có thể hiện "đang gõ", còn gửi tin bị chặn ở Messaging.
 3. Gateway publish `TypingStarted` (non-persistent, TTL 5 s) lên `realtime.events` → mọi instance nhận → đẩy `/topic/channels/{channelId}`.
 4. Client hiện "X đang gõ" 8 s, tắt sớm khi nhận `MessageCreated` của X.
 
@@ -89,7 +89,7 @@ Không lưu, không qua Presence, mất cũng không sao (at-most-once).
 | Độ phức tạp code | Thêm 2 consumer binding, 2 RPC, 1 policy — vừa sức, và là bài học thật về projection + nạp bù |
 | Sai lệch projection | Event mất/đến trễ → tự sửa khi `loaded` hết hạn 24 h; kick/ban/rời còn được chặn thêm ở tầng subscription |
 
-**Cách đơn giản hơn cho phase đầu (vẫn đúng quy tắc riêng tư) — đây là cái P6 đã làm:** ở P6 chỉ giao qua `/topic/servers/{serverId}` (người chung server) và lọc `GET /presence` theo projection server; phần bạn bè (projection `friends`, RPC `ListFriendIds`, giao `/user/queue/events`) thêm ở P7 khi có Social; tới đó `friendIds` của `PresenceChanged` luôn rỗng. Không bao giờ dùng topic broadcast chung.
+**Cách đơn giản hơn cho phase đầu (vẫn đúng quy tắc riêng tư) — P6 chỉ giao qua `/topic/servers/{serverId}` (người chung server); P7 thêm phần bạn bè:** projection `friends`, RPC `ListFriendIds`, `PresenceChanged.friendIds` giao qua `/user/queue/events`. Không bao giờ dùng topic broadcast chung.
 
 ## 7. Kết nối lại và bù dữ liệu
 

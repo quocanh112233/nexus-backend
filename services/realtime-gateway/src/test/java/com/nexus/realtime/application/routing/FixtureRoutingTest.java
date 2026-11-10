@@ -24,7 +24,14 @@ class FixtureRoutingTest {
 
   private static final Path EVENTS = Path.of("..", "..", "contracts", "events");
   private static final Set<String> TWO_ROUTES =
-      Set.of("MemberJoined", "MemberKicked", "MemberBanned", "PresenceChanged");
+      Set.of(
+          "MemberJoined",
+          "MemberKicked",
+          "MemberBanned",
+          "PresenceChanged",
+          "FriendRequestAccepted",
+          "FriendRemoved",
+          "DmChannelCreated");
   private static final Set<String> NO_ROUTES =
       Set.of(
           "GatewayHeartbeat",

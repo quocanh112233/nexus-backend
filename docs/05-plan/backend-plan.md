@@ -163,14 +163,14 @@ Ký hiệu: `[ ]` việc cần làm, `[x]` đã xong — "→" tiêu chí xong.
 
 | # | Việc | Tiêu chí xong |
 |---|------|---------------|
-| [x] 1 | `messaging/v1/channel_access_service.proto` + `ChannelAccessGrpcService` ở Messaging *(DM chờ P7)* | Test in-process (kênh server, DM sau P7) |
+| [x] 1 | `messaging/v1/channel_access_service.proto` + `ChannelAccessGrpcService` ở Messaging *(DM đã có từ P7)* | Test in-process (kênh server, DM từ P7) |
 | [x] 2 | `realtime-gateway`: `/ws`, auth CONNECT, kiểm tra SUBSCRIBE qua gRPC | Subscribe kênh không có quyền → ERROR frame |
 | [x] 3 | Queue riêng mỗi instance + map event → destination ([bảng](../02-architecture/realtime-design.md#3-scale-nhiều-instance-p-13)) *(demo-p6 bước 1, 2: 2 queue, client qua api-gateway nhận `MessageCreated`; chưa thử 2 client ở 2 instance khác nhau)* | 2 instance, client ở 2 instance nhận tin của nhau |
 | [x] 4 | Thu hồi subscription khi quyền đổi *(thu hồi có IT; mốc ≤ 1 s chưa đo riêng trên compose)* | Gỡ role → client mất subscription ≤ 1 s |
 | [x] 5 | Typing (FR-057) qua `TypingStarted` non-persistent *(chưa kiểm bằng 2 trình duyệt thật)* | Hiện "đang gõ" ở client khác |
 | [x] 6 | `presence-service`: consumer `presence.realtime.events`, Lua script, job dọn instance chết *(alive-ttl 60 s + job 15 s nên tối đa 75 s; số đo demo-p6 bước 4 trong journal)* | `kill -9` 1 instance gateway → user của nó OFFLINE ≤ 90 s |
 | [x] 6a | Projection quan hệ phần **server**: consumer `presence.community.events`, gRPC `ListServerIdsForUser` (thêm RPC ở Community, `x-service-token` — P-36), nạp bù lười + TTL 24 h | IT: xóa key Redis → lần kết nối sau nạp lại đúng |
-| [x] 6b | `PresenceAudiencePolicy`; `PresenceChanged` mang `serverIds`; realtime giao qua `/topic/servers/{id}`; `GET /presence` lọc *(giao qua topic server; phần bạn bè chờ P7)* | **IT riêng tư (NFR-018):** X không chung server → không nhận event, `GET /presence` không trả A; B bị ban khỏi server chung duy nhất → hết nhận |
+| [x] 6b | `PresenceAudiencePolicy`; `PresenceChanged` mang `serverIds`; realtime giao qua `/topic/servers/{id}`; `GET /presence` lọc *(giao qua topic server; phần bạn bè làm ở P7 mục 4a)* | **IT riêng tư (NFR-018):** X không chung server → không nhận event, `GET /presence` không trả A; B bị ban khỏi server chung duy nhất → hết nhận |
 | [x] 7 | Gateway route `/ws/**`; Dockerfile + compose + workflow cho realtime-gateway, presence *(CI xanh trên GitHub chưa kiểm vì chưa push; trace Tempo chưa kiểm)* | [ ] CI xanh (workflow chưa chạy trên GitHub) |
 
 **Demo (M2):** 2 trình duyệt, 2 instance gateway, chat realtime + typing + online/offline.
@@ -185,12 +185,14 @@ Ký hiệu: `[ ]` việc cần làm, `[x]` đã xong — "→" tiêu chí xong.
 
 | # | Việc | Tiêu chí xong |
 |---|------|---------------|
-| 1 | Module `social`: `FriendRequest`, `Friendship`, `DmChannel`; Flyway | Unit test mọi chuyển trạng thái hợp lệ/không hợp lệ |
-| 2 | API bạn bè (FR-070..FR-074) + gRPC `GetUser` | IT: A và B mời nhau đồng thời → thành bạn đúng 1 lần (partial unique index) |
-| 3 | DM (FR-075, FR-076), `DmAccessPolicy`, `channel_refs kind=DM`; `CheckChannelAccess` hỗ trợ DM | Hủy kết bạn → gửi DM 403, đọc vẫn được |
-| 4 | Event `FriendRequest*`, `FriendRemoved`, `DmChannelCreated` → realtime `/user/queue/events` | Lời mời hiện realtime |
-| 4a | Presence phần **bạn bè**: `messaging.v1.SocialService/ListFriendIds`, consumer `presence.messaging.events`, `PresenceChanged.friendIds` → `/user/queue/events` | IT: bạn không chung server thấy online; hủy kết bạn → hết thấy (FR-083) |
-| 5 | ArchUnit: `social` không import `message` internals ngoài port chung | Test xanh |
+| [x] 1 | Module `social`: `FriendRequest`, `Friendship`, `DmChannel`; Flyway | Unit test mọi chuyển trạng thái hợp lệ/không hợp lệ |
+| [x] 2 | API bạn bè (FR-070..FR-074) + gRPC `GetUser` | IT: A và B mời nhau đồng thời → thành bạn đúng 1 lần (partial unique index) |
+| [x] 3 | DM (FR-075, FR-076), `DmAccessPolicy`, `channel_refs kind=DM`; `CheckChannelAccess` hỗ trợ DM | Hủy kết bạn → gửi DM 403, đọc vẫn được |
+| [x] 4 | Event `FriendRequest*`, `FriendRemoved`, `DmChannelCreated` → realtime `/user/queue/events` | Lời mời hiện realtime |
+| [x] 4a | Presence phần **bạn bè**: `messaging.v1.SocialService/ListFriendIds`, consumer `presence.messaging.events`, `PresenceChanged.friendIds` → `/user/queue/events` | IT: bạn không chung server thấy online; hủy kết bạn → hết thấy (FR-083) |
+| [x] 5 | ArchUnit: `social` không import `message` internals ngoài port chung | Test xanh |
+
+**Demo:** `infra/scripts/demo-p7.sh` — kết bạn, nhận lời mời realtime, bạn không chung server thấy online, DM, hủy kết bạn (gửi 403, đọc 200, hết thấy online).
 
 ---
 
@@ -235,7 +237,7 @@ Ký hiệu: `[ ]` việc cần làm, `[x]` đã xong — "→" tiêu chí xong.
 |---------|----|----|----|----|----|----|----|----|
 | identity | Toàn bộ | JWKS cho service khác | | gRPC `UserService` | Relay outbox | | | |
 | community | | Core + invite | Role, permission, kick/ban | gRPC `PermissionService` | Relay outbox | RPC `ListServerIdsForUser` | | |
-| api-gateway | | Route, JWT, CORS, rate limit | | | | Route `/ws` | | |
+| api-gateway | | Route, JWT, CORS, rate limit | | | | Route `/ws` | Route `/friends`, `/dms` | |
 | messaging | | | | Core + gRPC client + Redis cache | Consumer, `channel_refs`, cache version | gRPC `ChannelAccessService` | Social, DM, gRPC `SocialService` | |
 | realtime-gateway | | | | | | Toàn bộ | User queue friend/DM | User queue read/mention |
 | presence | | | | | | Session, projection server, lọc riêng tư | Projection bạn bè | |

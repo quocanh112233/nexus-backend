@@ -32,16 +32,17 @@ class QueryPresenceUseCaseTest {
         return Set.of(server);
       };
 
+  private final FakeSessionStore store = new FakeSessionStore();
   private final QueryPresenceUseCase useCase =
       new QueryPresenceUseCase(
-          new EnsureLoadedUseCase(projection, loader), projection, new FakeSessionStore());
+          new EnsureLoadedUseCase(projection, loader, id -> Set.of()), projection, store);
 
   // Kịch bản: viewer đã nạp nhưng không ở server nào, các target chưa nạp
   // Input: viewer {} xem 3 target chưa loaded
   // Output: kết quả rỗng và loader không bị gọi lần nào
   @Test
   void viewerWithNoServersCausesZeroLoaderCalls() {
-    projection.load(viewer, Set.of(), projection.revision(viewer));
+    projection.load(viewer, Set.of(), Set.of(), projection.revision(viewer));
 
     var result = useCase.execute(viewer, List.of(user(), user(), user()));
 
@@ -54,9 +55,9 @@ class QueryPresenceUseCaseTest {
   // Output: loader gọi đúng 1 lần (cho u1) và kết quả chỉ có l
   @Test
   void loaderFailureOnFirstUnloadedTargetStopsFurtherLoaderCalls() {
-    projection.load(viewer, Set.of(server), projection.revision(viewer));
+    projection.load(viewer, Set.of(server), Set.of(), projection.revision(viewer));
     UUID loaded = user();
-    projection.load(loaded, Set.of(server), projection.revision(loaded));
+    projection.load(loaded, Set.of(server), Set.of(), projection.revision(loaded));
     UUID u1 = user();
     UUID u2 = user();
     UUID u3 = user();
@@ -73,7 +74,7 @@ class QueryPresenceUseCaseTest {
   // Output: kết quả chỉ có viewer với status OFFLINE
   @Test
   void selfStillVisibleWhenTargetsFail() {
-    projection.load(viewer, Set.of(server), projection.revision(viewer));
+    projection.load(viewer, Set.of(server), Set.of(), projection.revision(viewer));
     UUID u = user();
     failing.add(u);
 
@@ -88,15 +89,44 @@ class QueryPresenceUseCaseTest {
   // Output: bad bị loại, ok có mặt
   @Test
   void failingTargetOmittedAndVisibleTargetReturned() {
-    projection.load(viewer, Set.of(server), projection.revision(viewer));
+    projection.load(viewer, Set.of(server), Set.of(), projection.revision(viewer));
     UUID ok = user();
     UUID bad = user();
     failing.add(bad);
-    projection.load(ok, Set.of(server), projection.revision(ok));
+    projection.load(ok, Set.of(server), Set.of(), projection.revision(ok));
 
     var result = useCase.execute(viewer, List.of(bad, ok));
 
     assertThat(result).containsOnlyKeys(ok);
+  }
+
+  // Kịch bản: viewer không ở server nào nhưng có một bạn đang online
+  // Input: viewer servers {} friends {f}, f có session, xem [f]
+  // Output: kết quả {f: ONLINE}
+  @Test
+  void viewerWithNoServersStillSeesOnlineFriend() {
+    UUID f = user();
+    projection.load(viewer, Set.of(), Set.of(f), projection.revision(viewer));
+    store.connect("s-f", f, "i", java.time.Instant.now());
+
+    var result = useCase.execute(viewer, List.of(f));
+
+    assertThat(result).containsExactly(java.util.Map.entry(f, PresenceStatus.ONLINE));
+  }
+
+  // Kịch bản: viewer không có server cũng không có bạn
+  // Input: viewer servers {} friends {} xem [người lạ đang online, viewer]
+  // Output: chỉ có viewer, loader không bị gọi
+  @Test
+  void viewerWithNoServersAndNoFriendsSeesOnlySelf() {
+    UUID other = user();
+    projection.load(viewer, Set.of(), Set.of(), projection.revision(viewer));
+    store.connect("s-o", other, "i", java.time.Instant.now());
+
+    var result = useCase.execute(viewer, List.of(other, viewer));
+
+    assertThat(result).containsOnlyKeys(viewer);
+    assertThat(loaderCalls).isEmpty();
   }
 
   // Id user ngẫu nhiên

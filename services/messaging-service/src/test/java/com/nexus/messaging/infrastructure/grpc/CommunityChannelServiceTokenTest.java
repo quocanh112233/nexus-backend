@@ -5,6 +5,8 @@ import static org.mockito.Mockito.mock;
 
 import com.nexus.common.grpc.GrpcAuth;
 import com.nexus.messaging.domain.channel.ChannelRefRepository;
+import com.nexus.messaging.domain.social.DmChannelRepository;
+import com.nexus.messaging.domain.social.FriendshipRepository;
 import com.nexus.proto.community.v1.CheckChannelPermissionsRequest;
 import com.nexus.proto.community.v1.CheckChannelPermissionsResponse;
 import com.nexus.proto.community.v1.PermissionServiceGrpc;
@@ -73,6 +75,8 @@ class CommunityChannelServiceTokenTest {
           .withBean(ObservationRegistry.class, () -> ObservationRegistry.NOOP)
           .withBean(MeterRegistry.class, SimpleMeterRegistry::new)
           .withBean(ChannelRefRepository.class, () -> mock(ChannelRefRepository.class))
+          .withBean(DmChannelRepository.class, () -> mock(DmChannelRepository.class))
+          .withBean(FriendshipRepository.class, () -> mock(FriendshipRepository.class))
           .withBean(StringRedisTemplate.class, () -> mock(StringRedisTemplate.class))
           .withPropertyValues(
               "app.grpc.community.target=dns:///localhost:" + server.getPort(),

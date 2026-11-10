@@ -104,7 +104,7 @@ message ListServerIdsForUserResponse {
 }
 ```
 
-P6 có `errors.proto`, `permission_service.proto` (3 RPC), `user_service.proto` và `channel_access_service.proto`; `SocialService` (P7) chưa có file proto. `CheckChannelAccess` trả `OK` với `can_view=false` (không `NOT_FOUND`) cho kênh không tồn tại, đã xóa hoặc user thiếu `VIEW_CHANNEL`, `server_id` chỉ có khi `can_view=true`; Community hoặc breaker lỗi → `UNAVAILABLE`.
+P7 có `errors.proto`, `permission_service.proto` (3 RPC), `user_service.proto`, `channel_access_service.proto` và `social_service.proto` (`SocialService/ListFriendIds`). `CheckChannelAccess` trả `OK` với `can_view=false` (không `NOT_FOUND`) cho kênh không tồn tại, đã xóa hoặc user thiếu `VIEW_CHANNEL`, `server_id` chỉ có khi `can_view=true` và không phải DM (DM: `is_dm=true`, không có `server_id`); Community hoặc breaker lỗi → `UNAVAILABLE`.
 
 File `messaging/v1/channel_access_service.proto`, `messaging/v1/social_service.proto` và `identity/v1/user_service.proto` (`BatchGetUsersRequest.user_ids` tối đa 100 phần tử; `granted` ở trên là các quyền kênh user có):
 
@@ -199,8 +199,10 @@ Cấu hình bind `app.grpc.service-callers.<tên>.{token,methods}`. Token chỉ 
 | Community | `presence-service` | `GRPC_TOKEN_PRESENCE` | `nexus.community.v1.PermissionService/ListServerIdsForUser` |
 | Community | `messaging-service` | `GRPC_TOKEN_MESSAGING` | `nexus.community.v1.PermissionService/CheckChannelPermissions` |
 | Messaging | `realtime-gateway` | `GRPC_TOKEN_REALTIME` | `nexus.messaging.v1.ChannelAccessService/CheckChannelAccess` |
+| Messaging | `presence-service` | `GRPC_TOKEN_PRESENCE` | `nexus.messaging.v1.SocialService/ListFriendIds` |
+| Identity | `messaging-service` | `GRPC_TOKEN_MESSAGING` | `nexus.identity.v1.UserService/GetUser` |
 
-Chuỗi gateway → Messaging → Community: gateway gọi `CheckChannelAccess` bằng token của nó; Messaging gọi Community `CheckChannelPermissions` bằng token của chính Messaging. mTLS là backlog BL-13. `AuthServerInterceptor` cũng đặt MDC (`requestId`, `userId` hoặc `callerService`); `ExceptionMappingServerInterceptor` map exception → status.
+Messaging gọi Identity `GetUser` (kết bạn, mở DM) theo cùng quy tắc: có JWT user trên đường REST thì chuyển tiếp JWT, `x-service-token` chỉ khi không có JWT. Chuỗi gateway → Messaging → Community: gateway gọi `CheckChannelAccess` bằng token của nó; Messaging gọi Community `CheckChannelPermissions` bằng token của chính Messaging. mTLS là backlog BL-13. `AuthServerInterceptor` cũng đặt MDC (`requestId`, `userId` hoặc `callerService`); `ExceptionMappingServerInterceptor` map exception → status.
 
 ## 8. Thư viện
 

@@ -1,7 +1,6 @@
 package com.nexus.messaging.application.message;
 
 import com.nexus.messaging.application.port.ChannelAccess;
-import com.nexus.messaging.application.port.ChannelPermission;
 import com.nexus.messaging.application.port.ChannelPermissionChecker;
 import com.nexus.messaging.domain.message.Message;
 import com.nexus.messaging.domain.message.MessageId;
@@ -9,6 +8,7 @@ import com.nexus.messaging.domain.message.MessageRepository;
 import com.nexus.messaging.domain.reaction.ReactionCount;
 import com.nexus.messaging.domain.reaction.ReactionRepository;
 import com.nexus.messaging.domain.shared.ChannelId;
+import com.nexus.messaging.domain.shared.ChannelPermission;
 import com.nexus.messaging.domain.shared.DomainValidationException;
 import com.nexus.messaging.domain.shared.UserId;
 import java.util.List;

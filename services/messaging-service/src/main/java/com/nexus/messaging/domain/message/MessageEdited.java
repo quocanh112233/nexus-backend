@@ -7,7 +7,7 @@ import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
 
-// Sự kiện tin nhắn vừa được sửa, version là phiên bản sau khi lưu
+// Sự kiện tin nhắn vừa được sửa, version là phiên bản sau khi lưu, serverId null với DM
 public record MessageEdited(
     MessageId messageId,
     ChannelId channelId,

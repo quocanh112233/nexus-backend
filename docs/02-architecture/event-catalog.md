@@ -69,9 +69,9 @@ Ghi chú: `permissions` là chuỗi số thập phân của bitset (tránh mất
 
 | Event | Routing key | Consumer | Payload chính |
 |-------|-------------|----------|---------------|
-| `MessageCreated` | `message.created` | notification, realtime-gateway | `messageId, channelId, serverId, authorId, content, replyToId?, attachments[{publicId,url,contentType,bytes}], mentionUserIds[], createdAt, nonce` |
-| `MessageEdited` | `message.edited` | realtime-gateway | `messageId, channelId, serverId, content, mentionUserIds[], editedAt, version` |
-| `MessageDeleted` | `message.deleted` | realtime-gateway | `messageId, channelId, serverId, deletedBy` |
+| `MessageCreated` | `message.created` | notification, realtime-gateway | `messageId, channelId, serverId? (null với DM), authorId, content, replyToId?, attachments[{publicId,url,contentType,bytes}], mentionUserIds[], createdAt, nonce` |
+| `MessageEdited` | `message.edited` | realtime-gateway | `messageId, channelId, serverId? (null với DM), content, mentionUserIds[], editedAt, version` |
+| `MessageDeleted` | `message.deleted` | realtime-gateway | `messageId, channelId, serverId? (null với DM), deletedBy` |
 | `ReactionAdded` | `reaction.added` | realtime-gateway | `messageId, channelId, userId, emoji` |
 | `ReactionRemoved` | `reaction.removed` | realtime-gateway | `messageId, channelId, userId, emoji` |
 | `FriendRequestSent` | `friend-request.sent` | realtime-gateway | `requestId, requesterId, addresseeId` |
@@ -87,7 +87,7 @@ Ghi chú: `permissions` là chuỗi số thập phân của bitset (tránh mất
 |-------|-------------|----------|---------------|
 | `PresenceChanged` | `presence.changed` | realtime-gateway | `userId, status (ONLINE/OFFLINE), changedAt, serverIds[], friendIds[]` — danh sách người nhận hợp lệ theo D-18; realtime-gateway **chỉ** giao tới `/topic/servers/{serverId}` của các `serverIds` và `/user/queue/events` của các `friendIds` |
 
-Ghi chú triển khai P6: `friendIds` luôn rỗng cho tới P7 (chưa có bạn bè), nên chưa có frame `PresenceChanged` nào tới `/user/queue/events`. Frame gửi cho client chỉ mang `userId, status, changedAt` (bỏ `serverIds`, `friendIds`). Cùng nguyên tắc cho `MemberBanned` trên `/topic/servers/{id}`: frame chỉ có `serverId, userId, wasMember`, không có `reason`, `bannedBy`; bản gửi cho chính user bị ban ở `/user/queue/events` giữ nguyên payload.
+Ghi chú triển khai P7: `friendIds` là toàn bộ bạn trong projection (rỗng khi nạp quan hệ lỗi, fail-closed), frame tới bạn ở `/user/queue/events`; người vừa là bạn vừa chung server có thể nhận frame ở cả `/topic/servers/{id}` và `/user/queue/events`. Queue `presence.messaging.events` nhận `friend-request.accepted` và `friend.removed` để cập nhật projection bạn bè. Frame gửi cho client chỉ mang `userId, status, changedAt` (bỏ `serverIds`, `friendIds`). Cùng nguyên tắc cho `MemberBanned` trên `/topic/servers/{id}`: frame chỉ có `serverId, userId, wasMember`, không có `reason`, `bannedBy`; bản gửi cho chính user bị ban ở `/user/queue/events` giữ nguyên payload.
 
 ## 6. realtime.events
 
@@ -112,7 +112,7 @@ Ghi chú triển khai P6: `friendIds` luôn rỗng cho tới P7 (chưa có bạn
 | `messaging.community.events` | `community.events` | `channel.created`, `channel.deleted`, `channel.permissions-changed`, `server.deleted`, `member.left`, `member.kicked`, `member.banned`, `member.roles-changed`, `role.updated`, `role.deleted` |
 | `notification.community.events` (P8, chưa có) | `community.events` | `channel.created`, `channel.deleted`, `member.joined`, `member.left`, `member.kicked`, `member.banned`, `server.deleted` |
 | `presence.community.events` | `community.events` | `member.joined`, `member.left`, `member.kicked`, `member.banned`, `server.deleted` |
-| `presence.messaging.events` (P7, chưa có) | `messaging.events` | `friend-request.accepted`, `friend.removed` |
+| `presence.messaging.events` (P7) | `messaging.events` | `friend-request.accepted`, `friend.removed` |
 | `notification.messaging.events` (P8, chưa có) | `messaging.events` | `message.created`, `dm-channel.created` |
 | `presence.realtime.events` | `realtime.events` | `session.*`, `gateway.heartbeat` |
 | `realtime-gateway.<instanceId>` | `community.events` | `#` |

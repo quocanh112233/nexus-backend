@@ -95,13 +95,15 @@ Dùng được index `(channel_id, id DESC)` → độ phức tạp không phụ
 | `presence:closed:{sessionId}` | String | Tombstone chống `SessionConnected` đến muộn sau `SessionDisconnected` | 60 s |
 | `presence:status:{userId}` | String | `ONLINE` | không (xóa khi offline) |
 | `presence:rel:{userId}:servers` | Set | `serverId` user đang là member — projection từ `community.events` | ~25 h (đặt khi nạp) |
-| `presence:rel:{userId}:friends` | Set | `userId` bạn bè — projection từ `messaging.events` | không |
-| `presence:rel:{userId}:loaded` | String | Đánh dấu đã nạp đủ từ gRPC | 24 h (hết hạn → nạp lại, tự sửa sai lệch); 5 phút nếu user không có server nào (chặn khuếch đại ghi từ `GET /presence`) |
-| `presence:rel:{userId}:rev` | String (counter) | Phiên bản quan hệ của user: `INCR` mỗi event member áp vào user (kể cả chưa loaded), làm rào cho lần nạp snapshot | 25 h (đặt lại mỗi lần tăng) |
+| `presence:rel:{userId}:friends` | Set | `userId` bạn bè — projection từ `messaging.events` | ~25 h (đặt khi nạp nếu có bạn, và đặt lại mỗi lần thêm bạn vào user đã loaded) |
+| `presence:rel:{userId}:loaded` | String | Đánh dấu đã nạp đủ từ gRPC | 24 h khi user có ít nhất một quan hệ (server hoặc bạn; hết hạn → nạp lại, tự sửa sai lệch); 5 phút khi cả server và bạn đều rỗng (chặn khuếch đại ghi từ `GET /presence`) |
+| `presence:rel:{userId}:rev` | String (counter) | Phiên bản quan hệ của user: `INCR` mỗi event member hoặc bạn bè (`FriendRequestAccepted`, `FriendRemoved`) áp vào user (kể cả chưa loaded), làm rào cho lần nạp snapshot | 25 h (đặt lại mỗi lần tăng) |
 | `presence:rel:epoch` | String (counter) | `INCR` mỗi `ServerDeleted`; cộng với `rev` thành phiên bản để snapshot trước khi xóa server bị chặn cả với user chưa có trong mirror members | không |
 | `presence:server:{serverId}:members` | Set | Chỉ dùng để xử lý `ServerDeleted` (biết user nào cần bỏ server); `deleteServer` lấy members, xóa Set này và `INCR presence:rel:epoch` trong một script Lua nguyên tử rồi trả members đã lấy để gỡ server khỏi từng user | không |
 
-Nạp snapshot có rào: đọc `rev + epoch`, gọi gRPC lấy danh sách, rồi một Lua so lại phiên bản và chỉ ghi `servers`/`loaded` khi chưa đổi (lệch thì thử lại, tối đa 3 lần, quá thì fail-closed). Quy tắc projection: event chỉ được áp vào user **đã có** `loaded` (user chưa nạp sẽ được nạp đầy đủ từ gRPC khi cần, tránh projection thiếu). Kiểm tra `canSee(viewer, target)`: `SISMEMBER presence:rel:{viewer}:friends target` hoặc `SINTERCARD 2 presence:rel:{viewer}:servers presence:rel:{target}:servers LIMIT 1` > 0 — O(min(|A|,|B|)), vài chục phần tử mỗi user.
+Nạp snapshot có rào: đọc `rev + epoch`, gọi gRPC lấy danh sách, rồi một Lua so lại phiên bản và chỉ ghi `servers`, `friends`, `loaded` khi chưa đổi (lệch thì thử lại, tối đa 3 lần, quá thì fail-closed). Quy tắc projection: event chỉ được áp vào user **đã có** `loaded` (user chưa nạp sẽ được nạp đầy đủ từ gRPC khi cần, tránh projection thiếu). Kiểm tra `canSee(viewer, target)`: `SISMEMBER presence:rel:{viewer}:friends target` hoặc `SINTERCARD 2 presence:rel:{viewer}:servers presence:rel:{target}:servers LIMIT 1` > 0 — O(min(|A|,|B|)), vài chục phần tử mỗi user.
+
+Event bạn bè đến trễ hoặc đảo thứ tự chỉ được tự sửa khi `loaded` hết hạn (≈24 h): đó là trần của việc sắp xếp lại event bạn bè.
 
 Thao tác thêm/xóa session + đổi trạng thái chạy trong **một Lua script** để nguyên tử khi nhiều instance Presence xử lý đồng thời.
 

@@ -33,8 +33,8 @@ class RevocationServiceTest {
           new AccessChecker() {
             // Từ chối user trong denied, ném lỗi hạ tầng khi failing
             @Override
-            public Optional<UUID> canViewChannel(UUID userId, UUID channelId) {
-              return check(userId) ? Optional.of(server) : Optional.empty();
+            public Optional<ChannelScope> canViewChannel(UUID userId, UUID channelId) {
+              return check(userId) ? Optional.of(new ChannelScope(server)) : Optional.empty();
             }
 
             // Từ chối user trong denied, ném lỗi hạ tầng khi failing
@@ -93,6 +93,42 @@ class RevocationServiceTest {
     assertThat(registry.bySession("s1"))
         .extracting(SessionSubscription::destination)
         .containsExactly("/user/queue/events");
+  }
+
+  // Kịch bản: user vừa bị kick khỏi server vừa có subscription kênh DM (serverId null)
+  // Input: MemberKicked, ServerDeleted, RoleUpdated và MemberRolesChanged của server đó
+  // Output: không thu hồi gì, không hỏi checker, sub DM còn trong sổ
+  @Test
+  void serverEventsDoNotTouchDmSubscription() {
+    String dm = "/topic/channels/" + channel;
+    sub("s1", user, dm, null);
+    Map<String, Object> userServer =
+        Map.of("serverId", server.toString(), "userId", user.toString());
+
+    service.onEvent(event("MemberKicked", userServer));
+    service.onEvent(event("ServerDeleted", Map.of("serverId", server.toString())));
+    service.onEvent(event("RoleUpdated", Map.of("serverId", server.toString())));
+    service.onEvent(event("MemberRolesChanged", userServer));
+
+    assertThat(revoked).isEmpty();
+    assertThat(checks).isZero();
+    assertThat(registry.exists("s1", dm)).isTrue();
+  }
+
+  // Kịch bản: hết bạn thì sub DM vẫn được đọc
+  // Input: sub DM của user, FriendRemoved của user và bạn
+  // Output: không thu hồi gì, không hỏi checker, sub DM còn trong sổ
+  @Test
+  void friendRemovedDoesNotRevokeDmSubscription() {
+    String dm = "/topic/channels/" + channel;
+    sub("s1", user, dm, null);
+
+    service.onEvent(
+        event("FriendRemoved", Map.of("userId", user.toString(), "friendId", other.toString())));
+
+    assertThat(revoked).isEmpty();
+    assertThat(checks).isZero();
+    assertThat(registry.exists("s1", dm)).isTrue();
   }
 
   // Kịch bản: đổi role nhưng user vẫn xem được kênh

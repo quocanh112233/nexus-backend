@@ -36,7 +36,7 @@ class RealtimeEventListenerTest {
           new SessionService(
               store,
               new PresenceChangeNotifier(
-                  new EnsureLoadedUseCase(projection, id -> Set.of()),
+                  new EnsureLoadedUseCase(projection, id -> Set.of(), id -> Set.of()),
                   projection,
                   published::add,
                   Clock.systemUTC())));

@@ -3,11 +3,11 @@ package com.nexus.messaging.interfaces.grpc;
 import com.nexus.common.grpc.GrpcAuth;
 import com.nexus.common.grpc.GrpcStatuses;
 import com.nexus.messaging.application.port.ChannelAccess;
-import com.nexus.messaging.application.port.ChannelPermission;
 import com.nexus.messaging.application.port.ChannelPermissionChecker;
 import com.nexus.messaging.application.shared.ChannelNotFoundException;
 import com.nexus.messaging.application.shared.DependencyUnavailableException;
 import com.nexus.messaging.domain.shared.ChannelId;
+import com.nexus.messaging.domain.shared.ChannelPermission;
 import com.nexus.messaging.domain.shared.DomainValidationException;
 import com.nexus.messaging.domain.shared.UserId;
 import com.nexus.proto.messaging.v1.ChannelAccessServiceGrpc;
@@ -28,13 +28,13 @@ public class ChannelAccessGrpcService
 
   private final ChannelPermissionChecker checker;
 
-  // Nhận checker quyền kênh không cache (tombstone bọc gRPC) để re-check thu hồi luôn tươi
+  // Nhận checker không cache (DM tại chỗ, kênh server qua tombstone bọc gRPC) để luôn tươi
   public ChannelAccessGrpcService(
       @Qualifier("uncachedChannelPermissionChecker") ChannelPermissionChecker checker) {
     this.checker = checker;
   }
 
-  // Trả can_view và server_id, kênh không tồn tại hoặc đã xóa là OK với can_view=false
+  // Trả can_view, is_dm và server_id (rỗng với DM), kênh lạ hoặc đã xóa là OK với can_view=false
   @Override
   public void checkChannelAccess(
       CheckChannelAccessRequest request, StreamObserver<CheckChannelAccessResponse> observer) {
@@ -48,7 +48,10 @@ public class ChannelAccessGrpcService
       }
       ChannelAccess access = checker.check(user, ChannelId.of(request.getChannelId()));
       if (access.has(ChannelPermission.VIEW_CHANNEL)) {
-        response.setCanView(true).setServerId(access.serverId().toString());
+        response.setCanView(true).setIsDm(access.isDm());
+        if (!access.isDm()) {
+          response.setServerId(access.serverId().toString());
+        }
       }
     } catch (ChannelNotFoundException e) {
       response.setCanView(false);

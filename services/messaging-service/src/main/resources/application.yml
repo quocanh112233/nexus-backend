@@ -100,6 +100,10 @@ app:
         token: ${GRPC_TOKEN_REALTIME:}
         methods:
           - nexus.messaging.v1.ChannelAccessService/CheckChannelAccess
+      presence-service:
+        token: ${GRPC_TOKEN_PRESENCE:}
+        methods:
+          - nexus.messaging.v1.SocialService/ListFriendIds
     community:
       target: ${COMMUNITY_GRPC_TARGET:dns:///localhost:9092}
       deadline: 300ms
@@ -108,6 +112,9 @@ app:
         failure-rate-threshold: 50
         wait-duration-in-open-state: 10s
         permitted-calls-in-half-open-state: 3
+    identity:
+      target: ${IDENTITY_GRPC_TARGET:dns:///localhost:9091}
+      deadline: 300ms
   cloudinary:
     cloud-name: ${CLOUDINARY_CLOUD_NAME:}
     api-key: ${CLOUDINARY_API_KEY:}

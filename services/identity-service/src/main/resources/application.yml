@@ -75,6 +75,13 @@ management:
         include: health
 
 app:
+  grpc:
+    # Token từ env, trống thì caller bị vô hiệu; allowlist full method name cho từng caller
+    service-callers:
+      messaging-service:
+        token: ${GRPC_TOKEN_MESSAGING:}
+        methods:
+          - nexus.identity.v1.UserService/GetUser
   jwt:
     private-key-path: ${JWT_PRIVATE_KEY_PATH:}
     key-id: ${JWT_KEY_ID:nexus-1}

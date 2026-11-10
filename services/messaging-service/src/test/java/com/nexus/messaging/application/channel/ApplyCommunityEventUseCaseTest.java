@@ -135,6 +135,10 @@ class ApplyCommunityEventUseCaseTest {
       calls.add("upsert:" + channel.value() + ":" + server);
     }
 
+    // Không dùng trong test này
+    @Override
+    public void upsertDmChannel(ChannelId channel) {}
+
     // Ghi lời gọi tombstone kênh
     @Override
     public void tombstoneChannel(ChannelId channel, UUID server, Instant at) {
@@ -150,6 +154,12 @@ class ApplyCommunityEventUseCaseTest {
     // Luôn trả chưa xóa
     @Override
     public boolean isDeleted(ChannelId channel) {
+      return false;
+    }
+
+    // Không dùng trong test này
+    @Override
+    public boolean isDm(ChannelId channel) {
       return false;
     }
   }

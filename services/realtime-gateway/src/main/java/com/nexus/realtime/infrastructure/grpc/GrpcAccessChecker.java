@@ -7,6 +7,7 @@ import com.nexus.proto.messaging.v1.CheckChannelAccessRequest;
 import com.nexus.proto.messaging.v1.CheckChannelAccessResponse;
 import com.nexus.realtime.application.subscription.AccessCheckUnavailableException;
 import com.nexus.realtime.application.subscription.AccessChecker;
+import com.nexus.realtime.application.subscription.ChannelScope;
 import io.grpc.Channel;
 import java.util.Optional;
 import java.util.UUID;
@@ -24,9 +25,9 @@ public class GrpcAccessChecker implements AccessChecker {
     this.members = PermissionServiceGrpc.newBlockingStub(community);
   }
 
-  // Hỏi Messaging user có xem được kênh không
+  // Hỏi Messaging user có xem được kênh (server hoặc DM) không
   @Override
-  public Optional<UUID> canViewChannel(UUID userId, UUID channelId) {
+  public Optional<ChannelScope> canViewChannel(UUID userId, UUID channelId) {
     try {
       CheckChannelAccessResponse response =
           channels
@@ -36,9 +37,11 @@ public class GrpcAccessChecker implements AccessChecker {
                       .setUserId(userId.toString())
                       .setChannelId(channelId.toString())
                       .build());
-      return response.getCanView()
-          ? Optional.of(UUID.fromString(response.getServerId()))
-          : Optional.empty();
+      if (!response.getCanView()) {
+        return Optional.empty();
+      }
+      return Optional.of(
+          new ChannelScope(response.getIsDm() ? null : UUID.fromString(response.getServerId())));
     } catch (RuntimeException e) {
       throw new AccessCheckUnavailableException("messaging call failed", e);
     }

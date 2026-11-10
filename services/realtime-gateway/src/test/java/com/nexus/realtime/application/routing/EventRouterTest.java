@@ -85,6 +85,27 @@ class EventRouterTest {
     return m;
   }
 
+  // Các dòng bảng của event bạn bè và DM: đúng người nhận, data chỉ có khóa id
+  private static List<Arguments> social() {
+    Map<String, Object> req = of("requestId", CHANNEL.toString());
+    req.put("requesterId", USER.toString());
+    req.put("addresseeId", OTHER.toString());
+    Map<String, Object> pair = of("userId", USER.toString(), "friendId", OTHER.toString());
+    Map<String, Object> dm =
+        of(
+            "channelId",
+            CHANNEL.toString(),
+            "participantIds",
+            List.of(USER.toString(), OTHER.toString()));
+    return List.of(
+        row("FriendRequestSent", req, user(OTHER, req)),
+        row("FriendRequestAccepted", req, user(USER, req), user(OTHER, req)),
+        row("FriendRequestDeclined", req, user(USER, req)),
+        row("FriendRequestCanceled", req, user(OTHER, req)),
+        row("FriendRemoved", pair, user(USER, pair), user(OTHER, pair)),
+        row("DmChannelCreated", dm, user(USER, dm), user(OTHER, dm)));
+  }
+
   // Bảng event, payload và route mong đợi
   private static Stream<Arguments> table() {
     Map<String, Object> ch = of("channelId", CHANNEL.toString());
@@ -148,6 +169,7 @@ class EventRouterTest {
             "PresenceChanged",
             presence(List.of(), List.of(OTHER.toString())),
             user(OTHER, PRESENCE_DATA)));
+    social().forEach(rows::add);
     rows.add(row("SomethingNew", sv));
     return rows.build();
   }
@@ -235,5 +257,41 @@ class EventRouterTest {
     assertThat(routes.get(0).data().keySet())
         .containsExactlyInAnyOrder("serverId", "userId", "wasMember");
     assertThat(routes.get(1).data()).isNull();
+  }
+
+  // Kịch bản: event bạn bè mang thêm khóa thừa trong payload
+  // Input: FriendRequestSent có thêm khóa note, FriendRemoved có thêm khóa since
+  // Output: data của mọi route chỉ còn requestId/requesterId/addresseeId và userId/friendId
+  @Test
+  void socialDataKeepsOnlyIdKeys() {
+    Map<String, Object> sent =
+        of(
+            "requestId", CHANNEL.toString(),
+            "requesterId", USER.toString(),
+            "addresseeId", OTHER.toString(),
+            "note", "x");
+    Map<String, Object> removed =
+        of("userId", USER.toString(), "friendId", OTHER.toString(), "since", "y");
+    assertThat(EventRouter.route(envelope("FriendRequestSent", sent)))
+        .singleElement()
+        .satisfies(
+            r ->
+                assertThat(r.data().keySet())
+                    .containsExactlyInAnyOrder("requestId", "requesterId", "addresseeId"));
+    assertThat(EventRouter.route(envelope("FriendRemoved", removed)))
+        .allSatisfy(
+            r -> assertThat(r.data().keySet()).containsExactlyInAnyOrder("userId", "friendId"));
+  }
+
+  // Kịch bản: Message của kênh server (serverId chuỗi) và của DM (serverId null)
+  // Input: MessageCreated với serverId là UUID rồi với serverId null
+  // Output: cả hai chỉ có một route /topic/channels/{channelId}, không ném lỗi
+  @Test
+  void messageRoutesToChannelWhetherServerIdIsSetOrNull() {
+    Map<String, Object> inServer =
+        of("channelId", CHANNEL.toString(), "serverId", SERVER.toString());
+    Map<String, Object> inDm = of("channelId", CHANNEL.toString(), "serverId", null);
+    assertThat(EventRouter.route(envelope("MessageCreated", inServer))).containsExactly(channel());
+    assertThat(EventRouter.route(envelope("MessageCreated", inDm))).containsExactly(channel());
   }
 }

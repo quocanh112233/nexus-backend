@@ -1,7 +1,6 @@
 package com.nexus.messaging.application.reaction;
 
 import com.nexus.messaging.application.port.ChannelAccess;
-import com.nexus.messaging.application.port.ChannelPermission;
 import com.nexus.messaging.application.port.ChannelPermissionChecker;
 import com.nexus.messaging.application.port.DomainEventPublisher;
 import com.nexus.messaging.application.shared.MessageNotFoundException;
@@ -12,6 +11,7 @@ import com.nexus.messaging.domain.reaction.Reaction;
 import com.nexus.messaging.domain.reaction.ReactionAdded;
 import com.nexus.messaging.domain.reaction.ReactionRepository;
 import com.nexus.messaging.domain.shared.ChannelId;
+import com.nexus.messaging.domain.shared.ChannelPermission;
 import com.nexus.messaging.domain.shared.UserId;
 import java.time.Clock;
 import java.time.temporal.ChronoUnit;

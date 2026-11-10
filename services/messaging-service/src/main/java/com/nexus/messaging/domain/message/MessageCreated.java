@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-// Sự kiện tin nhắn vừa được tạo, replyToId và nonce có thể null
+// Sự kiện tin nhắn vừa được tạo; serverId (DM), replyToId và nonce có thể null
 public record MessageCreated(
     MessageId messageId,
     ChannelId channelId,

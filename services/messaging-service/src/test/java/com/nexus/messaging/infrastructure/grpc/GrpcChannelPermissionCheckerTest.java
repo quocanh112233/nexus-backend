@@ -4,10 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.nexus.messaging.application.port.ChannelAccess;
-import com.nexus.messaging.application.port.ChannelPermission;
 import com.nexus.messaging.application.shared.ChannelNotFoundException;
 import com.nexus.messaging.application.shared.DependencyUnavailableException;
 import com.nexus.messaging.domain.shared.ChannelId;
+import com.nexus.messaging.domain.shared.ChannelPermission;
 import com.nexus.messaging.domain.shared.UserId;
 import com.nexus.proto.community.v1.CheckChannelPermissionsRequest;
 import com.nexus.proto.community.v1.CheckChannelPermissionsResponse;

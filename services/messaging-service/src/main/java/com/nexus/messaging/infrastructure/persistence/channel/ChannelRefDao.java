@@ -20,6 +20,16 @@ interface ChannelRefDao extends JpaRepository<ChannelRefJpaEntity, UUID> {
       nativeQuery = true)
   void upsertServerChannel(@Param("channelId") UUID channelId, @Param("serverId") UUID serverId);
 
+  // Thêm kênh DM không có server nếu chưa có, chạy trong transaction của nơi gọi
+  @Modifying
+  @Query(
+      value =
+          "insert into {h-schema}channel_refs (channel_id, kind, server_id, updated_at)"
+              + " values (:channelId, 'DM', null, now())"
+              + " on conflict (channel_id) do nothing",
+      nativeQuery = true)
+  void upsertDmChannel(@Param("channelId") UUID channelId);
+
   // Tạo dòng đã xóa hoặc đánh dấu xóa dòng có sẵn, giữ deleted_at đầu tiên
   @Modifying
   @Query(
@@ -51,4 +61,12 @@ interface ChannelRefDao extends JpaRepository<ChannelRefJpaEntity, UUID> {
               + " where channel_id = :channelId and deleted_at is not null)",
       nativeQuery = true)
   boolean isDeleted(@Param("channelId") UUID channelId);
+
+  // True nếu kênh có dòng kind DM, đọc theo khóa chính
+  @Query(
+      value =
+          "select exists (select 1 from {h-schema}channel_refs"
+              + " where channel_id = :channelId and kind = 'DM')",
+      nativeQuery = true)
+  boolean isDm(@Param("channelId") UUID channelId);
 }

@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
-// Kiểm tra projection quan hệ trên Redis thật: key, TTL, SINTERCARD và nạp bù
+// Kiểm tra projection quan hệ trên Redis thật: key, TTL, SINTERCARD, bạn bè và nạp bù
 class RedisRelationshipProjectionIT {
 
   private static LettuceConnectionFactory factory;
@@ -56,7 +56,7 @@ class RedisRelationshipProjectionIT {
   // Output: serversOf đủ hai server, membersOf(s1) chứa user, loaded TTL (23h, 24h], servers ~25h
   @Test
   void loadStoresSetsAndLoadedFlagWithTtl() {
-    projection.load(user, Set.of(s1, s2), projection.revision(user));
+    projection.load(user, Set.of(s1, s2), Set.of(), projection.revision(user));
 
     assertThat(projection.isLoaded(user)).isTrue();
     assertThat(projection.serversOf(user)).containsExactlyInAnyOrder(s1, s2);
@@ -74,7 +74,7 @@ class RedisRelationshipProjectionIT {
   // Output: loaded có TTL tối đa 5 phút và không có key servers
   @Test
   void emptyLoadGetsShortLoadedTtl() {
-    projection.load(user, Set.of(), projection.revision(user));
+    projection.load(user, Set.of(), Set.of(), projection.revision(user));
 
     assertThat(projection.isLoaded(user)).isTrue();
     Long ttl = redis.getExpire("presence:rel:" + user + ":loaded", TimeUnit.SECONDS);
@@ -87,8 +87,8 @@ class RedisRelationshipProjectionIT {
   // Output: shareServer false rồi true
   @Test
   void shareServerTrueOnlyWhenIntersect() {
-    projection.load(user, Set.of(s1), projection.revision(user));
-    projection.load(other, Set.of(s2), projection.revision(other));
+    projection.load(user, Set.of(s1), Set.of(), projection.revision(user));
+    projection.load(other, Set.of(s2), Set.of(), projection.revision(other));
     assertThat(projection.shareServer(user, other)).isFalse();
 
     projection.addServer(other, s1);
@@ -101,7 +101,7 @@ class RedisRelationshipProjectionIT {
   // Output: isLoaded false, addServer chỉ ghi members chứ không ghi tập server của user
   @Test
   void expiredLoadedFlagMeansNotLoaded() {
-    projection.load(user, Set.of(), projection.revision(user));
+    projection.load(user, Set.of(), Set.of(), projection.revision(user));
     redis.delete("presence:rel:" + user + ":loaded");
 
     projection.addServer(user, s1);
@@ -123,8 +123,9 @@ class RedisRelationshipProjectionIT {
             id -> {
               calls[0]++;
               return Set.of(s1, s2);
-            });
-    projection.load(user, Set.of(s1), projection.revision(user));
+            },
+            id -> Set.of());
+    projection.load(user, Set.of(s1), Set.of(), projection.revision(user));
     redis.delete(Set.of("presence:rel:" + user + ":servers", "presence:rel:" + user + ":loaded"));
     assertThat(projection.isLoaded(user)).isFalse();
 
@@ -141,8 +142,8 @@ class RedisRelationshipProjectionIT {
   // Output: membersOf(s1) mất dần rồi rỗng
   @Test
   void removeServerAndDeleteServerClearMembers() {
-    projection.load(user, Set.of(s1), projection.revision(user));
-    projection.load(other, Set.of(s1), projection.revision(other));
+    projection.load(user, Set.of(s1), Set.of(), projection.revision(user));
+    projection.load(other, Set.of(s1), Set.of(), projection.revision(other));
 
     projection.removeServer(user, s1);
     assertThat(projection.serversOf(user)).isEmpty();
@@ -160,12 +161,12 @@ class RedisRelationshipProjectionIT {
     long stale = projection.revision(user);
     projection.removeServer(user, s1);
 
-    assertThat(projection.load(user, Set.of(s1), stale)).isFalse();
+    assertThat(projection.load(user, Set.of(s1), Set.of(), stale)).isFalse();
     assertThat(redis.hasKey("presence:rel:" + user + ":loaded")).isFalse();
     assertThat(redis.hasKey("presence:rel:" + user + ":servers")).isFalse();
     assertThat(projection.membersOf(s1)).isEmpty();
 
-    assertThat(projection.load(user, Set.of(s1), projection.revision(user))).isTrue();
+    assertThat(projection.load(user, Set.of(s1), Set.of(), projection.revision(user))).isTrue();
     assertThat(projection.serversOf(user)).containsExactly(s1);
     Long ttl = redis.getExpire("presence:rel:" + user + ":loaded", TimeUnit.SECONDS);
     assertThat(ttl).isBetween(Duration.ofHours(23).toSeconds(), Duration.ofHours(24).toSeconds());
@@ -197,8 +198,8 @@ class RedisRelationshipProjectionIT {
   // Output: trả đúng hai member, tập members bị xóa, epoch tăng đúng 1 mỗi lần gọi, s2 trả rỗng
   @Test
   void deleteServerReturnsCapturedMembersAndBumpsEpochOnce() {
-    projection.load(user, Set.of(s1), projection.revision(user));
-    projection.load(other, Set.of(s1), projection.revision(other));
+    projection.load(user, Set.of(s1), Set.of(), projection.revision(user));
+    projection.load(other, Set.of(s1), Set.of(), projection.revision(other));
     long epoch = epoch();
 
     assertThat(projection.deleteServer(s1)).containsExactlyInAnyOrder(user, other);
@@ -221,7 +222,8 @@ class RedisRelationshipProjectionIT {
       UUID server = UUID.randomUUID();
       AtomicBoolean deleted = new AtomicBoolean();
       EnsureLoadedUseCase ensure =
-          new EnsureLoadedUseCase(projection, id -> deleted.get() ? Set.of() : Set.of(server));
+          new EnsureLoadedUseCase(
+              projection, id -> deleted.get() ? Set.of() : Set.of(server), id -> Set.of());
       List<UUID> users = Stream.generate(UUID::randomUUID).limit(16).toList();
       CountDownLatch start = new CountDownLatch(1);
       List<Future<?>> tasks = new ArrayList<>();
@@ -275,7 +277,7 @@ class RedisRelationshipProjectionIT {
           pool.submit(
               () -> {
                 start.await();
-                return projection.load(user, Set.of(s1), r);
+                return projection.load(user, Set.of(s1), Set.of(), r);
               }));
     }
     tasks.add(
@@ -293,5 +295,159 @@ class RedisRelationshipProjectionIT {
 
     assertThat(projection.serversOf(user)).isEmpty();
     assertThat(projection.membersOf(s1)).doesNotContain(user);
+  }
+
+  // Kịch bản: nạp user chỉ có bạn, không có server
+  // Input: load(user, {}, {other}, revision hiện tại)
+  // Output: friendsOf đúng {other}, isFriend một chiều, loaded ~24h, friends ~25h
+  @Test
+  void loadStoresFriendsWithTtl() {
+    assertThat(projection.load(user, Set.of(), Set.of(other), projection.revision(user))).isTrue();
+
+    assertThat(projection.friendsOf(user)).containsExactly(other);
+    assertThat(projection.isFriend(user, other)).isTrue();
+    assertThat(projection.isFriend(other, user)).isFalse();
+    Long ttl = redis.getExpire("presence:rel:" + user + ":loaded", TimeUnit.SECONDS);
+    assertThat(ttl).isBetween(Duration.ofHours(23).toSeconds(), Duration.ofHours(24).toSeconds());
+    Long friendsTtl = redis.getExpire("presence:rel:" + user + ":friends", TimeUnit.SECONDS);
+    assertThat(friendsTtl)
+        .isBetween(Duration.ofHours(24).toSeconds(), Duration.ofHours(25).toSeconds());
+  }
+
+  // Kịch bản: event bạn bè đến giữa lúc đọc revision và lúc load
+  // Input: revision r, addFriend(user, other) khi user chưa loaded, load(user, {s1}, {x}, r)
+  // Output: load false, không ghi servers/friends/loaded; load với revision mới thì true
+  @Test
+  void staleRevisionAfterFriendEventWritesNeitherSet() {
+    long stale = projection.revision(user);
+    projection.addFriend(user, other);
+    UUID x = UUID.randomUUID();
+
+    assertThat(projection.load(user, Set.of(s1), Set.of(x), stale)).isFalse();
+    assertThat(redis.hasKey("presence:rel:" + user + ":loaded")).isFalse();
+    assertThat(redis.hasKey("presence:rel:" + user + ":friends")).isFalse();
+    assertThat(redis.hasKey("presence:rel:" + user + ":servers")).isFalse();
+
+    assertThat(projection.load(user, Set.of(s1), Set.of(other), projection.revision(user)))
+        .isTrue();
+    assertThat(projection.friendsOf(user)).containsExactly(other);
+  }
+
+  // Kịch bản: kết bạn rồi hủy giữa hai user đã loaded, mỗi event giao hai lần
+  // Input: addFriend(user, other) x2 rồi removeFriend(other, user) x2
+  // Output: sau add mỗi bên đúng 1 bạn, sau remove cả hai rỗng; rev của cả hai tăng mỗi event
+  @Test
+  void addAndRemoveFriendUpdateBothSidesIdempotently() {
+    projection.load(user, Set.of(), Set.of(), projection.revision(user));
+    projection.load(other, Set.of(), Set.of(), projection.revision(other));
+    long userRev = rev(user);
+    long otherRev = rev(other);
+
+    projection.addFriend(user, other);
+    projection.addFriend(user, other);
+    assertThat(projection.friendsOf(user)).containsExactly(other);
+    assertThat(projection.friendsOf(other)).containsExactly(user);
+
+    projection.removeFriend(other, user);
+    projection.removeFriend(other, user);
+    assertThat(projection.friendsOf(user)).isEmpty();
+    assertThat(projection.friendsOf(other)).isEmpty();
+    assertThat(rev(user)).isEqualTo(userRev + 4);
+    assertThat(rev(other)).isEqualTo(otherRev + 4);
+  }
+
+  // Bộ đếm rev riêng của user (không cộng epoch), 0 nếu chưa có
+  private static long rev(UUID id) {
+    String v = redis.opsForValue().get("presence:rel:" + id + ":rev");
+    return v == null ? 0 : Long.parseLong(v);
+  }
+
+  // Kịch bản: user đã loaded với tập bạn rỗng rồi được kết bạn
+  // Input: load(user, {}, {}, revision hiện tại) rồi addFriend(user, other)
+  // Output: friendsOf đúng {other}, key friends có TTL dương và tối đa 25h
+  @Test
+  void addFriendToLoadedUserWithNoFriendsSetsFriendsTtl() {
+    projection.load(user, Set.of(), Set.of(), projection.revision(user));
+
+    projection.addFriend(user, other);
+
+    assertThat(projection.friendsOf(user)).containsExactly(other);
+    Long ttl = redis.getExpire("presence:rel:" + user + ":friends", TimeUnit.SECONDS);
+    assertThat(ttl).isBetween(1L, Duration.ofHours(25).toSeconds());
+  }
+
+  // Kịch bản: kết bạn khi chỉ một bên đã loaded
+  // Input: load user, addFriend(user, other) với other chưa loaded
+  // Output: user có other; other không có key friends nhưng revision tăng, rev có TTL ~25h
+  @Test
+  void friendEventForUnloadedSideOnlyBumpsItsRevision() {
+    projection.load(user, Set.of(), Set.of(), projection.revision(user));
+    long otherRev = projection.revision(other);
+
+    projection.addFriend(user, other);
+
+    assertThat(projection.friendsOf(user)).containsExactly(other);
+    assertThat(redis.hasKey("presence:rel:" + other + ":friends")).isFalse();
+    assertThat(projection.revision(other)).isGreaterThan(otherRev);
+    Long ttl = redis.getExpire("presence:rel:" + other + ":rev", TimeUnit.SECONDS);
+    assertThat(ttl).isBetween(Duration.ofHours(24).toSeconds(), Duration.ofHours(25).toSeconds());
+  }
+
+  // Kịch bản: kết bạn xảy ra trong lúc đang lấy danh sách bạn từ Messaging
+  // Input: loader bạn lần 1 trả {} và áp addFriend(user, other) trong callback, lần 2 trả {other}
+  // Output: loader bạn gọi 2 lần, user loaded với friendsOf đúng {other}
+  @Test
+  void friendEventDuringFetchFencesLoadAndEnsureRetries() {
+    int[] calls = {0};
+    EnsureLoadedUseCase ensure =
+        new EnsureLoadedUseCase(
+            projection,
+            id -> Set.of(),
+            id -> {
+              if (calls[0]++ == 0) {
+                projection.addFriend(user, other);
+                return Set.of();
+              }
+              return Set.of(other);
+            });
+
+    ensure.ensure(user);
+
+    assertThat(calls[0]).isEqualTo(2);
+    assertThat(projection.isLoaded(user)).isTrue();
+    assertThat(projection.friendsOf(user)).containsExactly(other);
+  }
+
+  // Kịch bản: nhiều luồng nạp snapshot cũ có bạn trong lúc FriendRemoved đến
+  // Input: 8 luồng load(user, {}, {other}, r) và 1 luồng removeFriend(user, other) đồng thời
+  // Output: mọi thứ tự xen kẽ đều kết thúc với friendsOf(user) không còn other
+  @Test
+  void concurrentLoadsAndRemoveFriendNeverLeaveStaleFriend() throws Exception {
+    long r = projection.revision(user);
+    ExecutorService pool = Executors.newFixedThreadPool(9);
+    CountDownLatch start = new CountDownLatch(1);
+    List<Future<?>> tasks = new ArrayList<>();
+    for (int i = 0; i < 8; i++) {
+      tasks.add(
+          pool.submit(
+              () -> {
+                start.await();
+                return projection.load(user, Set.of(), Set.of(other), r);
+              }));
+    }
+    tasks.add(
+        pool.submit(
+            () -> {
+              start.await();
+              projection.removeFriend(user, other);
+              return null;
+            }));
+    start.countDown();
+    for (Future<?> f : tasks) {
+      f.get(5, TimeUnit.SECONDS);
+    }
+    pool.shutdown();
+
+    assertThat(projection.friendsOf(user)).doesNotContain(other);
   }
 }

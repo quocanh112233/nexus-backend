@@ -10,7 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-// Dựng PresenceChange với serverIds từ projection rồi phát, Community lỗi vẫn phát
+// Dựng PresenceChange với serverIds, friendIds từ projection rồi phát, loader lỗi vẫn phát
 @Component
 public class PresenceChangeNotifier {
 
@@ -33,20 +33,25 @@ public class PresenceChangeNotifier {
     this.clock = clock;
   }
 
-  // Nạp bù quan hệ rồi phát; nạp lỗi dùng server đã có, đọc projection lỗi dùng danh sách rỗng
+  // Nạp bù rồi phát; nạp lỗi dùng server đã có và không gửi bạn nào, đọc lỗi dùng danh sách rỗng
   public void changed(UUID userId, PresenceStatus status) {
     List<UUID> servers = List.of();
+    List<UUID> friends = List.of();
+    boolean loaded = true;
     try {
       ensure.ensure(userId);
     } catch (RuntimeException e) {
+      loaded = false;
       LOG.warn("Không nạp được quan hệ của {}, phát với server đã có: {}", userId, e.toString());
     }
     try {
       servers = List.copyOf(projection.serversOf(userId));
+      if (loaded) {
+        friends = List.copyOf(projection.friendsOf(userId));
+      }
     } catch (RuntimeException e) {
-      LOG.warn("Không đọc được server của {}, phát với danh sách rỗng: {}", userId, e.toString());
+      LOG.warn("Không đọc được quan hệ của {}, phát với danh sách rỗng: {}", userId, e.toString());
     }
-    publisher.publish(
-        new PresenceChange(userId, status.name(), clock.instant(), servers, List.of()));
+    publisher.publish(new PresenceChange(userId, status.name(), clock.instant(), servers, friends));
   }
 }

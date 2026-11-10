@@ -33,7 +33,8 @@ class EnsureLoadedUseCaseTest {
             Set<UUID> snapshot = snapshots.get(Math.min(calls, snapshots.size() - 1));
             duringFetch.accept(calls++);
             return snapshot;
-          });
+          },
+          id -> Set.of());
 
   // Áp event một lần duy nhất vào lần lấy snapshot đầu tiên
   private void eventOnFirstFetch(int n, String type, UUID serverId, UUID userId) {
@@ -47,7 +48,7 @@ class EnsureLoadedUseCaseTest {
   // Output: loader gọi 2 lần, user không còn server và QueryPresenceUseCase không thấy peer
   @Test
   void staleSnapshotIsFencedAndRetried() {
-    projection.load(peer, Set.of(server), projection.revision(peer));
+    projection.load(peer, Set.of(server), Set.of(), projection.revision(peer));
     snapshots.addAll(List.of(Set.of(server), Set.of()));
     duringFetch = n -> eventOnFirstFetch(n, "MemberKicked", server, user);
 

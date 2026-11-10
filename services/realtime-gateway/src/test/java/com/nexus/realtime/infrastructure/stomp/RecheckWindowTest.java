@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.nexus.common.messaging.EventEnvelope;
 import com.nexus.realtime.application.subscription.AccessChecker;
+import com.nexus.realtime.application.subscription.ChannelScope;
 import com.nexus.realtime.application.subscription.RevocationService;
 import com.nexus.realtime.application.subscription.SessionSubscription;
 import com.nexus.realtime.application.subscription.SubscriptionRegistry;
@@ -55,10 +56,10 @@ class RecheckWindowTest {
             new AccessChecker() {
               // Chặn mọi lần check tới khi thả latch rồi cho phép
               @Override
-              public Optional<UUID> canViewChannel(UUID userId, UUID channelId) {
+              public Optional<ChannelScope> canViewChannel(UUID userId, UUID channelId) {
                 entered.countDown();
                 await();
-                return Optional.of(server);
+                return Optional.of(new ChannelScope(server));
               }
 
               // Không dùng trong kịch bản này

@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.nexus.realtime.application.subscription.AccessChecker;
+import com.nexus.realtime.application.subscription.ChannelScope;
 import com.nexus.realtime.application.subscription.SessionSubscription;
 import com.nexus.realtime.application.subscription.SubscriptionRegistry;
 import java.util.List;
@@ -57,7 +58,8 @@ class StompAuthChannelInterceptorTest {
   @Test
   void reusedSubscriptionIdKeepsFirstInRegistry() {
     AccessChecker checker = mock(AccessChecker.class);
-    when(checker.canViewChannel(any(), any())).thenReturn(Optional.of(UUID.randomUUID()));
+    when(checker.canViewChannel(any(), any()))
+        .thenReturn(Optional.of(new ChannelScope(UUID.randomUUID())));
     SubscriptionRegistry registry = new SubscriptionRegistry();
     StompAuthChannelInterceptor interceptor =
         new StompAuthChannelInterceptor(mock(JwtDecoder.class), checker, registry);

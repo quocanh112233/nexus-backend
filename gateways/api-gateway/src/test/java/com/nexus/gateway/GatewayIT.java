@@ -445,6 +445,27 @@ class GatewayIT {
     assertThat(MESSAGING.last()).isNull();
   }
 
+  // Kịch bản: /api/v1/friends/** và /api/v1/dms tới messaging, giữ Bearer, không JWT thì 401
+  // Input: GET friends/requests, POST dms có token hợp lệ; cùng hai đường không Authorization
+  // Output: có token 200 từ messaging giả đúng đường dẫn và Bearer; không token 401 và không tới
+  @Test
+  void friendsAndDmsRoutesGoToMessagingAndRequireJwt() throws Exception {
+    String token = JWT.token(UUID.randomUUID(), "alice");
+
+    HttpResponse<String> friends = send("GET", "/api/v1/friends/requests", token, Map.of());
+    assertThat(json(friends).get("service").asText()).isEqualTo("messaging");
+    assertThat(MESSAGING.last().path()).isEqualTo("/api/v1/friends/requests");
+    assertThat(MESSAGING.last().authorization()).isEqualTo("Bearer " + token);
+    HttpResponse<String> dms = send("POST", "/api/v1/dms", token, Map.of());
+    assertThat(json(dms).get("service").asText()).isEqualTo("messaging");
+    assertThat(MESSAGING.last().path()).isEqualTo("/api/v1/dms");
+
+    MESSAGING.reset();
+    assertThat(send("GET", "/api/v1/friends/requests", null, Map.of()).statusCode()).isEqualTo(401);
+    assertThat(send("POST", "/api/v1/dms", null, Map.of()).statusCode()).isEqualTo(401);
+    assertThat(MESSAGING.last()).isNull();
+  }
+
   // Gửi request tới gateway với method, token Bearer và header tùy chọn
   private HttpResponse<String> send(
       String method, String path, String token, Map<String, String> headers) throws Exception {

@@ -53,8 +53,8 @@ class PresencePrivacyIT extends PresenceApiIntegrationTest {
   // Output: 200 với mảng rỗng, không có phần tử OFFLINE giả
   @Test
   void strangerDoesNotSeeUserInGetPresence() throws Exception {
-    projection.load(a, Set.of(UUID.randomUUID()), projection.revision(a));
-    projection.load(x, Set.of(UUID.randomUUID()), projection.revision(x));
+    projection.load(a, Set.of(UUID.randomUUID()), Set.of(), projection.revision(a));
+    projection.load(x, Set.of(UUID.randomUUID()), Set.of(), projection.revision(x));
     sessions.connect("s-" + a, a, "gw-1", Instant.now());
 
     var response = getPresence("?userIds=" + a, bearer(x));
@@ -70,8 +70,8 @@ class PresencePrivacyIT extends PresenceApiIntegrationTest {
   void userSharingServerSeesOnline() throws Exception {
     UUID b = UUID.randomUUID();
     UUID server = UUID.randomUUID();
-    projection.load(a, Set.of(server), projection.revision(a));
-    projection.load(b, Set.of(server), projection.revision(b));
+    projection.load(a, Set.of(server), Set.of(), projection.revision(a));
+    projection.load(b, Set.of(server), Set.of(), projection.revision(b));
     sessions.connect("s-" + a, a, "gw-1", Instant.now());
 
     JsonNode body = MAPPER.readTree(getPresence("?userIds=" + a, bearer(b)).body());
@@ -88,8 +88,8 @@ class PresencePrivacyIT extends PresenceApiIntegrationTest {
   void bannedFromOnlySharedServerNoLongerSeen() throws Exception {
     UUID b = UUID.randomUUID();
     UUID server = UUID.randomUUID();
-    projection.load(a, Set.of(server), projection.revision(a));
-    projection.load(b, Set.of(server), projection.revision(b));
+    projection.load(a, Set.of(server), Set.of(), projection.revision(a));
+    projection.load(b, Set.of(server), Set.of(), projection.revision(b));
     sessions.connect("s-" + a, a, "gw-1", Instant.now());
     assertThat(MAPPER.readTree(getPresence("?userIds=" + a, bearer(b)).body())).hasSize(1);
 
@@ -108,8 +108,8 @@ class PresencePrivacyIT extends PresenceApiIntegrationTest {
     UUID s1 = UUID.randomUUID();
     UUID s2 = UUID.randomUUID();
     UUID s3 = UUID.randomUUID();
-    projection.load(a, Set.of(s1, s2), projection.revision(a));
-    projection.load(x, Set.of(s3), projection.revision(x));
+    projection.load(a, Set.of(s1, s2), Set.of(), projection.revision(a));
+    projection.load(x, Set.of(s3), Set.of(), projection.revision(x));
 
     sessions.connect("s-" + a, a, "gw-1", Instant.now());
 
@@ -125,7 +125,7 @@ class PresencePrivacyIT extends PresenceApiIntegrationTest {
   // Output: 200 với mảng rỗng, kể cả chính X (fail-closed, không 5xx)
   @Test
   void loaderDownMeansNobodyVisible() throws Exception {
-    projection.load(a, Set.of(UUID.randomUUID()), projection.revision(a));
+    projection.load(a, Set.of(UUID.randomUUID()), Set.of(), projection.revision(a));
     sessions.connect("s-" + a, a, "gw-1", Instant.now());
 
     var response = getPresence("?userIds=" + a + "," + x, bearer(x));

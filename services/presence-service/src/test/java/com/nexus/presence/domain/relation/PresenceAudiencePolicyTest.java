@@ -28,8 +28,8 @@ class PresenceAudiencePolicyTest {
   @Test
   void sharingOneServerIsVisible() {
     UUID s1 = UUID.randomUUID();
-    projection.load(viewer, Set.of(s1), projection.revision(viewer));
-    projection.load(target, Set.of(s1, UUID.randomUUID()), projection.revision(target));
+    projection.load(viewer, Set.of(s1), Set.of(), projection.revision(viewer));
+    projection.load(target, Set.of(s1, UUID.randomUUID()), Set.of(), projection.revision(target));
 
     assertThat(PresenceAudiencePolicy.canSee(viewer, target, projection)).isTrue();
   }
@@ -41,8 +41,8 @@ class PresenceAudiencePolicyTest {
   void sharingManyServersIsVisible() {
     UUID s1 = UUID.randomUUID();
     UUID s2 = UUID.randomUUID();
-    projection.load(viewer, Set.of(s1, s2), projection.revision(viewer));
-    projection.load(target, Set.of(s1, s2), projection.revision(target));
+    projection.load(viewer, Set.of(s1, s2), Set.of(), projection.revision(viewer));
+    projection.load(target, Set.of(s1, s2), Set.of(), projection.revision(target));
 
     assertThat(PresenceAudiencePolicy.canSee(viewer, target, projection)).isTrue();
   }
@@ -52,8 +52,8 @@ class PresenceAudiencePolicyTest {
   // Output: canSee trả false
   @Test
   void strangerIsNotVisible() {
-    projection.load(viewer, Set.of(UUID.randomUUID()), projection.revision(viewer));
-    projection.load(target, Set.of(UUID.randomUUID()), projection.revision(target));
+    projection.load(viewer, Set.of(UUID.randomUUID()), Set.of(), projection.revision(viewer));
+    projection.load(target, Set.of(UUID.randomUUID()), Set.of(), projection.revision(target));
 
     assertThat(PresenceAudiencePolicy.canSee(viewer, target, projection)).isFalse();
   }
@@ -63,8 +63,49 @@ class PresenceAudiencePolicyTest {
   // Output: canSee trả false (fail-closed)
   @Test
   void unloadedViewerSeesNobodyElse() {
-    projection.load(target, Set.of(UUID.randomUUID()), projection.revision(target));
+    projection.load(target, Set.of(UUID.randomUUID()), Set.of(), projection.revision(target));
 
     assertThat(PresenceAudiencePolicy.canSee(viewer, target, projection)).isFalse();
+  }
+
+  // Kịch bản: hai user là bạn nhưng không chung server nào
+  // Input: viewer {s1}, target {s2}, addFriend(viewer, target)
+  // Output: canSee trả true theo cả hai chiều
+  @Test
+  void friendWithoutSharedServerIsVisible() {
+    projection.load(viewer, Set.of(UUID.randomUUID()), Set.of(), projection.revision(viewer));
+    projection.load(target, Set.of(UUID.randomUUID()), Set.of(), projection.revision(target));
+
+    projection.addFriend(viewer, target);
+
+    assertThat(PresenceAudiencePolicy.canSee(viewer, target, projection)).isTrue();
+    assertThat(PresenceAudiencePolicy.canSee(target, viewer, projection)).isTrue();
+  }
+
+  // Kịch bản: hết là bạn và không chung server nào
+  // Input: hai user loaded là bạn, server khác nhau, rồi removeFriend
+  // Output: canSee trả false
+  @Test
+  void exFriendWithoutSharedServerIsNotVisible() {
+    projection.load(viewer, Set.of(UUID.randomUUID()), Set.of(target), projection.revision(viewer));
+    projection.load(target, Set.of(UUID.randomUUID()), Set.of(viewer), projection.revision(target));
+
+    projection.removeFriend(target, viewer);
+
+    assertThat(PresenceAudiencePolicy.canSee(viewer, target, projection)).isFalse();
+  }
+
+  // Kịch bản: hết là bạn nhưng vẫn chung một server
+  // Input: hai user loaded là bạn, cùng {s1}, rồi removeFriend
+  // Output: canSee vẫn true qua đường server
+  @Test
+  void exFriendStillSharingServerIsVisible() {
+    UUID s1 = UUID.randomUUID();
+    projection.load(viewer, Set.of(s1), Set.of(target), projection.revision(viewer));
+    projection.load(target, Set.of(s1), Set.of(viewer), projection.revision(target));
+
+    projection.removeFriend(viewer, target);
+
+    assertThat(PresenceAudiencePolicy.canSee(viewer, target, projection)).isTrue();
   }
 }

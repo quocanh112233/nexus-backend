@@ -2,6 +2,7 @@ package com.nexus.realtime.infrastructure.stomp;
 
 import com.nexus.realtime.application.subscription.AccessCheckUnavailableException;
 import com.nexus.realtime.application.subscription.AccessChecker;
+import com.nexus.realtime.application.subscription.ChannelScope;
 import com.nexus.realtime.application.subscription.SessionSubscription;
 import com.nexus.realtime.application.subscription.SubscriptionRegistry;
 import com.nexus.realtime.application.subscription.SubscriptionRule;
@@ -9,6 +10,7 @@ import com.nexus.realtime.application.subscription.SubscriptionRule.Kind;
 import com.nexus.realtime.application.subscription.SubscriptionRule.Target;
 import java.security.Principal;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
@@ -85,21 +87,25 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
       throw deny("DUPLICATE_SUBSCRIPTION_ID");
     }
     Target target = parse(accessor.getDestination());
-    UUID serverId = null;
+    Optional<ChannelScope> scope;
     try {
-      serverId =
+      scope =
           switch (target.kind()) {
-            case CHANNEL -> accessChecker.canViewChannel(userId, target.id()).orElse(null);
-            case SERVER -> accessChecker.isServerMember(userId, target.id()) ? target.id() : null;
-            case USER_EVENTS -> null;
+            case CHANNEL -> accessChecker.canViewChannel(userId, target.id());
+            case SERVER ->
+                accessChecker.isServerMember(userId, target.id())
+                    ? Optional.of(new ChannelScope(target.id()))
+                    : Optional.empty();
+            case USER_EVENTS -> Optional.of(new ChannelScope(null));
             case TYPING_SEND -> throw deny("INVALID_DESTINATION");
           };
     } catch (AccessCheckUnavailableException e) {
       throw deny("DEPENDENCY_UNAVAILABLE");
     }
-    if (serverId == null && target.kind() != Kind.USER_EVENTS) {
+    if (scope.isEmpty()) {
       throw deny("PERMISSION_DENIED");
     }
+    UUID serverId = scope.get().serverId();
     if (!registry.add(
         new SessionSubscription(
             sessionId, userId, subscriptionId, accessor.getDestination(), serverId))) {
