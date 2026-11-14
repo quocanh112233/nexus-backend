@@ -68,6 +68,9 @@ public final class EventRouter {
     if (USER_TOO.contains(type)) {
       routes.add(user(id(payload, "userId")));
     }
+    if ("ReadStateUpdated".equals(type) || "MentionCreated".equals(type)) {
+      routes.add(user(id(payload, "userId")));
+    }
     if ("ServerCreated".equals(type)) {
       routes.add(user(id(payload, "ownerId")));
     }

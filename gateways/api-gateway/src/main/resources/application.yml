@@ -129,6 +129,19 @@ spring:
                     redis-rate-limiter.burstCapacity: 300
                     deny-empty-key: true
                     throw-on-limit: true
+            - id: notification
+              uri: ${NOTIFICATION_URI:http://notification-service:8086}
+              predicates:
+                - Path=/api/v1/read-states/**
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@subKeyResolver}"
+                    redis-rate-limiter.replenishRate: 5
+                    redis-rate-limiter.requestedTokens: 3
+                    redis-rate-limiter.burstCapacity: 300
+                    deny-empty-key: true
+                    throw-on-limit: true
             # WebSocket: không rate limit và không Bearer ở handshake, xác thực nằm ở frame STOMP CONNECT
             - id: realtime
               uri: ws://${REALTIME_URI:realtime-gateway:8084}
@@ -152,6 +165,12 @@ spring:
                 - Path=/docs/messaging/v3/api-docs
               filters:
                 - RewritePath=/docs/messaging/v3/api-docs, /v3/api-docs
+            - id: notification-docs
+              uri: ${NOTIFICATION_URI:http://notification-service:8086}
+              predicates:
+                - Path=/docs/notification/v3/api-docs
+              filters:
+                - RewritePath=/docs/notification/v3/api-docs, /v3/api-docs
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -200,6 +219,8 @@ springdoc:
         url: /docs/community/v3/api-docs
       - name: messaging
         url: /docs/messaging/v3/api-docs
+      - name: notification
+        url: /docs/notification/v3/api-docs
 
 logging:
   level:

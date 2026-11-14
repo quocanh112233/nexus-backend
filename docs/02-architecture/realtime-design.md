@@ -32,7 +32,7 @@ Giải pháp: **mỗi instance có một queue riêng** (`realtime-gateway.<inst
 | `PresenceChanged` | `/topic/servers/{serverId}` với mỗi `serverId` trong payload **và** `/user/queue/events` của mỗi `friendId` trong payload — không có topic presence chung (D-18) |
 | `FriendRequest*`, `FriendRemoved` | `/user/queue/events` của người liên quan (Sent/Canceled → addressee, Declined → requester, Accepted/Removed → cả hai); `data` chỉ gồm id: `requestId, requesterId, addresseeId` hoặc `userId, friendId` |
 | `DmChannelCreated` | `/user/queue/events` của 2 participant, `data`: `channelId, participantIds` |
-| `ReadStateUpdated`, `MentionCreated` | `/user/queue/events` của `userId` |
+| `ReadStateUpdated`, `MentionCreated` | `/user/queue/events` của `userId` (từ `notification.events`, realtime-gateway bind `#`; `demo-p8.sh` kiểm cả hai) |
 | `MemberJoined` | thêm `/user/queue/events` của user vừa join (để UI thêm server) |
 | `ServerCreated` | `/user/queue/events` của owner (thiết bị khác) |
 

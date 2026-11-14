@@ -77,9 +77,12 @@ Dùng được index `(channel_id, id DESC)` → độ phức tạp không phụ
 |------|----------|-------------------|
 | `channel_activity` | `channel_id PK, server_id null, last_message_id null, last_message_at, deleted_at` | index `(server_id)` — **projection** |
 | `server_members` | `server_id, user_id, joined_at` | PK `(server_id, user_id)` — **projection** |
+| `dm_participants` | `channel_id, user_id` | PK `(channel_id, user_id)`; index `(user_id)` — **projection** từ `DmChannelCreated`, để kiểm mention hợp lệ ở DM |
 | `read_states` | `user_id, channel_id, last_read_message_id null, mention_count int, updated_at` | PK `(user_id, channel_id)` |
 | `mentions` | `message_id, user_id, channel_id, server_id null, author_id, created_at` | PK `(message_id, user_id)`; index `(user_id, channel_id)` |
 | `outbox_event`, `processed_event` | | |
+
+`mention_count` không đặt cứng 0 khi đọc: `PUT` đặt `last_read_message_id = GREATEST(cũ, mới)` rồi tính lại bằng số dòng `mentions` của `(user, kênh)` có `message_id` lớn hơn mốc mới, nên đọc tới giữa kênh vẫn còn mention phía sau.
 
 `GET /api/v1/read-states` = join `read_states` với `channel_activity` theo `user_id` (cùng schema, hợp lệ).
 

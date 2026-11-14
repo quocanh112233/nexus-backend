@@ -133,6 +133,34 @@ Sau vòng sửa 1 (alive-ttl 60 s, job 15 s, kênh gRPC kết nối chủ độn
 
 Script sau khi kill tự bật lại replica ở EXIT trap nên chạy lại liền được. `down -v` xong, không còn container, network, volume nào của `nexus-p6demo`.
 
+## P8 Notification
+
+- **Projection thay vì gọi đồng bộ**: notification-service không gọi service khác; unread suy ra từ `channel_activity` (từ `MessageCreated`), quyền mention từ `server_members` và `dm_participants` (từ `community.events`, `DmChannelCreated`). Hai queue riêng nên thứ tự giữa chúng không đảm bảo: `MessageCreated` tự upsert `channel_activity`, `ChannelDeleted` upsert tombstone, mốc đọc luôn dùng `GREATEST` (D7).
+- **Tác giả không tự có unread (D2)**: `MessageCreated` đẩy mốc đã đọc của tác giả lên chính tin đó nếu tác giả là member/participant. `MemberJoined` đặt mốc đọc là tin cuối của các kênh đã có tin nên tin cũ không hiện chưa đọc (D3).
+- **`mention_count` tính lại khi đọc (D5)**: `PUT` đặt mốc `GREATEST(cũ, mới)` rồi đếm lại các `mentions` có `message_id` lớn hơn mốc, nên đọc tới giữa kênh vẫn còn mention phía sau và mốc không lùi.
+- **Gateway**: route `notification` (`/api/v1/read-states/**`) cùng rate limit 100 request/phút/user như presence, thêm route docs `/docs/notification/v3/api-docs`. Mọi service khác vẫn không publish cổng ra host.
+
+### Rủi ro đã biết (P8)
+
+- `MemberJoined` đến sau `MessageCreated` (hai queue) làm rớt mention của tin đó; không bù lại (D7).
+- `MessageEdited`/`MessageDeleted` không xử lý nên unread/mention không giảm khi tin bị sửa hay xóa (D8).
+- `GET /read-states` không phân trang, chỉ trả kênh đã có tin (D10); thêm cursor khi số kênh mỗi user lớn.
+- `PUT /read-states` chấp nhận id UUID bất kỳ (chỉ ảnh hưởng read state của chính user).
+- Tổng mention theo server do client cộng từ `items[].serverId`; service không trả tổng.
+- Giới hạn đã biết: notification chỉ biết membership server, không kiểm `VIEW_CHANNEL`; member không có quyền xem kênh private vẫn thấy `channelId`, `lastMessageId`, `unread` qua `GET /read-states`, `PUT` trả 200 và có thể nhận `MentionCreated` nếu bị mention (nội dung tin không lộ); chặn thật cần Community `CheckChannelAccess` và lọc mention ở messaging (backlog P9). `MemberJoined` replay sau `ServerDeleted` (chỉ khi replay DLQ) làm kênh mồ côi truy cập lại được.
+
+### Kết quả demo P8
+
+`infra/scripts/demo-p8.sh` chạy trên project cô lập (`docker compose -p nexus-p8demo`, `POSTGRES_PORT=55432`, `REDIS_PORT=56379` vì máy đang giữ cổng 5432 và 6379, token gRPC sinh ngẫu nhiên trong env), exit 0, 5 dòng `PASS`:
+
+1. A gửi tin có `<@B>`, B (STOMP qua api-gateway) nhận frame `MentionCreated` trên `/user/queue/events`. PASS.
+2. `GET /read-states` của B có kênh đó `unread=true`, `mentionCount=1`; của A `unread=false`. PASS.
+3. B `PUT` tới tin mention: `mentionCount=0`, thiết bị STOMP thứ hai của B nhận `ReadStateUpdated`. PASS.
+4. B `PUT` tới tin mới hơn rồi `PUT` lại id cũ hơn: `lastReadMessageId` không lùi. PASS.
+5. A mention C (chưa vào server): `GET /read-states` của C rỗng. PASS.
+
+`down -v` xong, không còn container, network, volume nào của `nexus-p8demo`.
+
 ## Bằng chứng observability (Task 13)
 
 Chạy `OTEL_ENDPOINT=http://otel-lgtm:4318 docker compose --profile observability up -d --build --wait` rồi `infra/scripts/demo-p2.sh` (exit 0, 9 bước). Truy vấn qua Grafana `http://127.0.0.1:3001` (admin/admin), datasource proxy `/api/datasources/proxy/uid/loki/loki/api/v1/query_range`; label `service_name` có 3 giá trị `api-gateway`, `community-service`, `identity-service`.
@@ -159,3 +187,4 @@ Tempo (`/api/datasources/proxy/uid/tempo/api/traces/ff2bcf46833759729884b2e9e196
 - Push nhánh `feat/p2-community`, mở PR, xác nhận CI xanh và các image `ghcr.io/quocanh112233/nexus-community-service`, `ghcr.io/quocanh112233/nexus-api-gateway` xuất hiện trên GHCR; sau đó tự tạo tag `v0.2.0`.
 - P5: sau khi merge, tự tạo tag `v0.5.0`; tự chạy bài message queue 2, 4, 6 và xem message rate trên RabbitMQ UI (`http://127.0.0.1:15672`).
 - P6: sau khi merge, tự tạo tag `v0.6.0`; mở `infra/demo/realtime-demo.html` bằng 2 trình duyệt (serve từ `http://localhost:3000`) để xem chat realtime, typing và presence bằng mắt; kiểm trace Tempo cho luồng WebSocket nếu cần.
+- P8: sau khi merge, tự tạo tag `v0.8.0`; push nhánh `feat/p8-notification`, mở PR, xác nhận CI xanh và image `ghcr.io/quocanh112233/nexus-notification-service` xuất hiện trên GHCR.

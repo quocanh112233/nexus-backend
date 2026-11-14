@@ -33,13 +33,19 @@ public class GatewayQueueConfig {
   Declarables gatewayTopology(Queue instanceQueue) {
     List<Declarable> all = new ArrayList<>();
     for (String exchange :
-        List.of("community.events", "messaging.events", "presence.events", "realtime.events")) {
+        List.of(
+            "community.events",
+            "messaging.events",
+            "presence.events",
+            "realtime.events",
+            "notification.events")) {
       all.addAll(EventTopology.exchange(exchange).getDeclarables());
     }
     all.add(bind(instanceQueue, "community.events", "#"));
     all.add(bind(instanceQueue, "messaging.events", "#"));
     all.add(bind(instanceQueue, "presence.events", "presence.changed"));
     all.add(bind(instanceQueue, "realtime.events", "typing.started"));
+    all.add(bind(instanceQueue, "notification.events", "#"));
     return new Declarables(all);
   }
 

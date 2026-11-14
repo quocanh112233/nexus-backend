@@ -110,15 +110,15 @@ Ghi chú triển khai P7: `friendIds` là toàn bộ bạn trong projection (r�
 | Queue | Exchange | Routing key bind |
 |-------|----------|------------------|
 | `messaging.community.events` | `community.events` | `channel.created`, `channel.deleted`, `channel.permissions-changed`, `server.deleted`, `member.left`, `member.kicked`, `member.banned`, `member.roles-changed`, `role.updated`, `role.deleted` |
-| `notification.community.events` (P8, chưa có) | `community.events` | `channel.created`, `channel.deleted`, `member.joined`, `member.left`, `member.kicked`, `member.banned`, `server.deleted` |
+| `notification.community.events` | `community.events` | `channel.created`, `channel.deleted`, `member.joined`, `member.left`, `member.kicked`, `member.banned`, `server.deleted` |
 | `presence.community.events` | `community.events` | `member.joined`, `member.left`, `member.kicked`, `member.banned`, `server.deleted` |
 | `presence.messaging.events` (P7) | `messaging.events` | `friend-request.accepted`, `friend.removed` |
-| `notification.messaging.events` (P8, chưa có) | `messaging.events` | `message.created`, `dm-channel.created` |
+| `notification.messaging.events` | `messaging.events` | `message.created`, `dm-channel.created` |
 | `presence.realtime.events` | `realtime.events` | `session.*`, `gateway.heartbeat` |
 | `realtime-gateway.<instanceId>` | `community.events` | `#` |
 | | `messaging.events` | `#` |
 | | `presence.events` | `presence.changed` |
-| | `notification.events` (P8, chưa có) | `#` |
+| | `notification.events` | `#` |
 | | `realtime.events` | `typing.started` |
 
 Ai khai báo gì: **producer** khai báo exchange của mình; **consumer** khai báo queue, DLQ và binding của mình (consumer sở hữu queue). File `infra/rabbitmq/definitions.json` chỉ dùng để tạo vhost `nexus` và user mỗi service.

@@ -29,6 +29,7 @@ Thêm module mới: khai báo một dòng `<module>` trong `libs/pom.xml` hoặc
 | Demo P3 (role Mod, overwrite kênh, ban/gỡ ban; 6 request auth mỗi lần chạy) | `./infra/scripts/demo-p3.sh` |
 | Demo P4 (nhắn tin, reaction, phân trang; 6 request auth mỗi lần chạy; thêm `DEMO_STOP_COMMUNITY=1 COMPOSE_PROJECT=<project>` để dừng Community và xem 503) | `./infra/scripts/demo-p4.sh` |
 | Demo P7 (kết bạn, DM, presence bạn bè; cần stack đang chạy, `COMPOSE_PROJECT=<project>`; 6 request auth mỗi lần chạy) | `COMPOSE_PROJECT=<project> ./infra/scripts/demo-p7.sh` |
+| Demo P8 (mention realtime, unread, đánh dấu đã đọc; cần stack đang chạy, `COMPOSE_PROJECT=<project>`; 6 request auth mỗi lần chạy) | `COMPOSE_PROJECT=<project> ./infra/scripts/demo-p8.sh` |
 | Thêm Grafana/Loki/Tempo/Prometheus, bật OTLP | `OTEL_ENDPOINT=http://otel-lgtm:4318 docker compose --profile observability up -d --build --wait` |
 | Kiểm cách ly schema | `./infra/scripts/verify-isolation.sh` |
 | Xóa sạch kể cả dữ liệu | `docker compose down -v` |

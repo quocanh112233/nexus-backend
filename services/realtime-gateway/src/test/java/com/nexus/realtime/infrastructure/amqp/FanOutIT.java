@@ -230,6 +230,34 @@ class FanOutIT {
     assertThat(userData.has("bannedBy")).isTrue();
   }
 
+  // Kịch bản: ReadStateUpdated từ notification.events chỉ tới thiết bị của chính user
+  // Input: publish ReadStateUpdated của user U, U và user khác cùng subscribe /user/queue/events
+  // Output: U nhận đúng một frame với nguyên payload, user khác không nhận gì
+  @Test
+  void readStateUpdatedReachesOnlyOwnerQueue() throws Exception {
+    Client owner = connect(b);
+    Client bystander = connect(a);
+    owner.subscribe("/user/queue/events");
+    bystander.subscribe("/user/queue/events");
+
+    publish(
+        "notification.events",
+        "read-state.updated",
+        "ReadStateUpdated",
+        Map.of(
+            "userId", owner.userId.toString(),
+            "channelId", channelId.toString(),
+            "lastReadMessageId", UUID.randomUUID().toString(),
+            "mentionCount", 0));
+
+    JsonNode frame = owner.next();
+    assertThat(frame.get("type").asText()).isEqualTo("ReadStateUpdated");
+    assertThat(frame.get("data").get("channelId").asText()).isEqualTo(channelId.toString());
+    assertThat(frame.get("data").get("mentionCount").asInt()).isZero();
+    assertThat(owner.frames.poll(1, TimeUnit.SECONDS)).isNull();
+    assertThat(bystander.frames.poll(1, TimeUnit.SECONDS)).isNull();
+  }
+
   // Kịch bản: event hỏng không làm gateway dừng
   // Input: body không phải JSON, MessageCreated thiếu channelId, rồi MessageCreated hợp lệ
   // Output: hai event đầu bị bỏ, event hợp lệ vẫn tới client

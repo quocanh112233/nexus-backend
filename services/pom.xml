@@ -19,5 +19,6 @@
     <module>messaging-service</module>
     <module>realtime-gateway</module>
     <module>presence-service</module>
+    <module>notification-service</module>
   </modules>
 </project>

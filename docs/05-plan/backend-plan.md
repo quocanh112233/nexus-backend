@@ -202,12 +202,14 @@ Ký hiệu: `[ ]` việc cần làm, `[x]` đã xong — "→" tiêu chí xong.
 
 | # | Việc | Tiêu chí xong |
 |---|------|---------------|
-| 1 | `notification-service`, Flyway (`channel_activity, server_members, read_states, mentions, outbox_event, processed_event`) | ArchUnit xanh |
-| 2 | Consumer `community.events` và `messaging.events` theo [bảng binding](../02-architecture/event-catalog.md#8-ma-trận-binding-queue--exchange-routing-key) | IT với RabbitMQ Testcontainers |
-| 3 | Unread + mention (FR-090, FR-091, FR-093); mention chỉ tính nếu là member/participant | IT: mention người ngoài server không tăng đếm |
-| 4 | `PUT /read-states/{channelId}` (FR-092) chỉ tăng; `ReadStateUpdated`, `MentionCreated` | IT: gửi `lastReadMessageId` cũ hơn → không lùi |
-| 5 | Event đến sai thứ tự | IT: `MessageCreated` id lớn trước id nhỏ → `last_message_id` đúng |
-| 6 | Dockerfile + compose + workflow | CI xanh |
+| [x] 1 | `notification-service`, Flyway (`channel_activity, server_members, read_states, mentions, outbox_event, processed_event`) *(thêm `dm_participants` để kiểm mention ở DM, D9)* | ArchUnit xanh |
+| [x] 2 | Consumer `community.events` và `messaging.events` theo [bảng binding](../02-architecture/event-catalog.md#8-ma-trận-binding-queue--exchange-routing-key) | IT với RabbitMQ Testcontainers |
+| [x] 3 | Unread + mention (FR-090, FR-091, FR-093); mention chỉ tính nếu là member/participant | IT: mention người ngoài server không tăng đếm |
+| [x] 4 | `PUT /read-states/{channelId}` (FR-092) chỉ tăng; `ReadStateUpdated`, `MentionCreated` | IT: gửi `lastReadMessageId` cũ hơn → không lùi *(`mention_count` tính lại theo mốc mới, D5; `GET` không phân trang, D10)* |
+| [x] 5 | Event đến sai thứ tự | IT: `MessageCreated` id lớn trước id nhỏ → `last_message_id` đúng |
+| [x] 6 | Dockerfile + compose + workflow | [ ] CI xanh (chờ CI sau khi push) |
+
+**Demo:** `infra/scripts/demo-p8.sh` — mention realtime, `GET /read-states` có unread và `mentionCount`, `PUT` đánh dấu đã đọc (mốc không lùi), mention người ngoài server không tính.
 
 **Demo (M3):** đầy đủ MVP.
 
@@ -237,7 +239,7 @@ Ký hiệu: `[ ]` việc cần làm, `[x]` đã xong — "→" tiêu chí xong.
 |---------|----|----|----|----|----|----|----|----|
 | identity | Toàn bộ | JWKS cho service khác | | gRPC `UserService` | Relay outbox | | | |
 | community | | Core + invite | Role, permission, kick/ban | gRPC `PermissionService` | Relay outbox | RPC `ListServerIdsForUser` | | |
-| api-gateway | | Route, JWT, CORS, rate limit | | | | Route `/ws` | Route `/friends`, `/dms` | |
+| api-gateway | | Route, JWT, CORS, rate limit | | | | Route `/ws` | Route `/friends`, `/dms` | Route `/read-states` |
 | messaging | | | | Core + gRPC client + Redis cache | Consumer, `channel_refs`, cache version | gRPC `ChannelAccessService` | Social, DM, gRPC `SocialService` | |
 | realtime-gateway | | | | | | Toàn bộ | User queue friend/DM | User queue read/mention |
 | presence | | | | | | Session, projection server, lọc riêng tư | Projection bạn bè | |

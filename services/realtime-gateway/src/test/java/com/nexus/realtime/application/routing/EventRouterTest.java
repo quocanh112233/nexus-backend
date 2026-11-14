@@ -283,6 +283,37 @@ class EventRouterTest {
             r -> assertThat(r.data().keySet()).containsExactlyInAnyOrder("userId", "friendId"));
   }
 
+  // Kịch bản: ReadStateUpdated báo đã đọc cho các thiết bị của chính user
+  // Input: ReadStateUpdated có userId, channelId, lastReadMessageId, mentionCount
+  // Output: một route /queue/events tới userId, data null tức giữ nguyên payload
+  @Test
+  void readStateUpdatedGoesToOwnerQueueWithFullPayload() {
+    Map<String, Object> payload =
+        of(
+            "userId", USER.toString(),
+            "channelId", CHANNEL.toString(),
+            "lastReadMessageId", OTHER.toString(),
+            "mentionCount", 0);
+    assertThat(EventRouter.route(envelope("ReadStateUpdated", payload)))
+        .containsExactly(user(USER));
+  }
+
+  // Kịch bản: MentionCreated trong DM (serverId null) vẫn tới người được mention
+  // Input: MentionCreated có serverId null, userId là người được mention
+  // Output: một route /queue/events tới userId, data null tức giữ nguyên payload
+  @Test
+  void mentionCreatedGoesToMentionedUserQueue() {
+    Map<String, Object> payload =
+        of(
+            "userId", USER.toString(),
+            "channelId", CHANNEL.toString(),
+            "serverId", null,
+            "messageId", OTHER.toString(),
+            "authorId", OTHER.toString(),
+            "mentionCount", 1);
+    assertThat(EventRouter.route(envelope("MentionCreated", payload))).containsExactly(user(USER));
+  }
+
   // Kịch bản: Message của kênh server (serverId chuỗi) và của DM (serverId null)
   // Input: MessageCreated với serverId là UUID rồi với serverId null
   // Output: cả hai chỉ có một route /topic/channels/{channelId}, không ném lỗi

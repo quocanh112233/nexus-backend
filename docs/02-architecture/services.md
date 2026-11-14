@@ -161,7 +161,7 @@ REST: `GET /api/v1/presence?userIds=a,b` (≤200) — chỉ trả user mà ngư�
 
 ## 5. notification-service
 
-**Trách nhiệm:** unread theo kênh, đếm mention.
+**Trách nhiệm:** unread theo kênh, đếm mention. Cổng HTTP 8086, management 8186.
 
 | Loại | Tên | Mô tả |
 |------|-----|-------|
@@ -171,7 +171,15 @@ REST: `GET /api/v1/presence?userIds=a,b` (≤200) — chỉ trả user mà ngư�
 | Entity | `Mention` | Unique `(messageId, userId)` |
 | Domain event | `ReadStateUpdated`, `MentionCreated` | |
 
-REST: `GET /api/v1/read-states`, `PUT /api/v1/read-states/{channelId}`. Nghe: `community.events` (`ChannelCreated`, `ChannelDeleted`, `MemberJoined`, `MemberLeft`, `MemberKicked`, `MemberBanned`, `ServerDeleted`), `messaging.events` (`MessageCreated`, `DmChannelCreated`) (cả service này thuộc P8, chưa có ở P6).
+REST: `GET /api/v1/read-states`, `PUT /api/v1/read-states/{channelId}`. Nghe: `community.events` (`ChannelCreated`, `ChannelDeleted`, `MemberJoined`, `MemberLeft`, `MemberKicked`, `MemberBanned`, `ServerDeleted`), `messaging.events` (`MessageCreated`, `DmChannelCreated`). Phát (outbox, exchange `notification.events`): `ReadStateUpdated`, `MentionCreated`.
+
+Quy ước đã chốt:
+
+- D2: `MessageCreated` đẩy mốc đã đọc của chính tác giả lên tin đó (tin của mình không tính là chưa đọc), chỉ khi tác giả là member server hoặc participant DM.
+- D3: `MemberJoined` tạo read state cho mọi kênh đã có tin của server với mốc đã đọc là tin cuối, `mention_count = 0`; `ChannelCreated` không fan-out.
+- D7: `MessageCreated` tự upsert `channel_activity` nếu `ChannelCreated` chưa tới (hai queue không đảm bảo thứ tự); `MemberJoined` đến sau `MessageCreated` thì mention của tin đó rớt (ceiling đã chấp nhận); `MemberJoined` replay sau `ServerDeleted` (chỉ khi replay DLQ) làm kênh mồ côi truy cập lại được.
+- D8: không xử lý `MessageEdited`/`MessageDeleted`, nên đếm unread/mention không giảm khi tin bị sửa hay xóa (backlog).
+- Giới hạn đã biết: notification chỉ biết membership server (`server_members`), không kiểm `VIEW_CHANNEL`; member không có quyền xem kênh private vẫn thấy `channelId`, `lastMessageId`, `unread` qua `GET /read-states`, `PUT` trả 200 và có thể nhận `MentionCreated` nếu bị mention (nội dung tin không lộ). Chặn thật cần gọi Community `CheckChannelAccess` (PUT/GET) và lọc mention ở messaging — backlog P9.
 
 ## 6. realtime-gateway
 

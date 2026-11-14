@@ -56,6 +56,7 @@ class GatewayIT {
   private static final Stub IDENTITY = new Stub("identity");
   private static final Stub COMMUNITY = new Stub("community");
   private static final Stub MESSAGING = new Stub("messaging");
+  private static final Stub NOTIFICATION = new Stub("notification");
   private static final int CLOSED_PORT = closedPort();
 
   private final HttpClient http = HttpClient.newHttpClient();
@@ -68,6 +69,7 @@ class GatewayIT {
     registry.add("IDENTITY_URI", IDENTITY::uri);
     registry.add("COMMUNITY_URI", COMMUNITY::uri);
     registry.add("MESSAGING_URI", MESSAGING::uri);
+    registry.add("NOTIFICATION_URI", NOTIFICATION::uri);
     registry.add("JWKS_URI", JWKS::uri);
     registry.add("CORS_ALLOWED_ORIGINS", () -> ORIGIN + ",http://localhost:5173");
     registry.add("GATEWAY_RESPONSE_TIMEOUT", () -> "2s");
@@ -81,6 +83,7 @@ class GatewayIT {
     IDENTITY.stop();
     COMMUNITY.stop();
     MESSAGING.stop();
+    NOTIFICATION.stop();
     JWKS.close();
   }
 
@@ -359,8 +362,8 @@ class GatewayIT {
   }
 
   // Kịch bản: tài liệu OpenAPI của từng service đi qua gateway không cần JWT
-  // Input: GET /docs/{identity,community,messaging}/v3/api-docs, swagger-config
-  // Output: 200 từ đúng service với đường /v3/api-docs; swagger-config liệt kê ba url
+  // Input: GET /docs/{identity,community,messaging,notification}/v3/api-docs, swagger-config
+  // Output: 200 từ đúng service với đường /v3/api-docs; swagger-config liệt kê bốn url
   @Test
   void docsRoutesAreProxiedAndPublic() throws Exception {
     HttpResponse<String> identity = send("GET", "/docs/identity/v3/api-docs", null, Map.of());
@@ -376,6 +379,11 @@ class GatewayIT {
     assertThat(messaging.statusCode()).isEqualTo(200);
     assertThat(json(messaging).get("service").asText()).isEqualTo("messaging");
     assertThat(MESSAGING.last.get().path()).isEqualTo("/v3/api-docs");
+    HttpResponse<String> notification =
+        send("GET", "/docs/notification/v3/api-docs", null, Map.of());
+    assertThat(notification.statusCode()).isEqualTo(200);
+    assertThat(json(notification).get("service").asText()).isEqualTo("notification");
+    assertThat(NOTIFICATION.last().path()).isEqualTo("/v3/api-docs");
 
     HttpResponse<String> config = send("GET", "/v3/api-docs/swagger-config", null, Map.of());
 
@@ -383,7 +391,8 @@ class GatewayIT {
     assertThat(config.body())
         .contains("/docs/identity/v3/api-docs")
         .contains("/docs/community/v3/api-docs")
-        .contains("/docs/messaging/v3/api-docs");
+        .contains("/docs/messaging/v3/api-docs")
+        .contains("/docs/notification/v3/api-docs");
     assertThat(send("GET", "/swagger-ui.html", null, Map.of()).statusCode()).isLessThan(400);
   }
 
@@ -464,6 +473,29 @@ class GatewayIT {
     assertThat(send("GET", "/api/v1/friends/requests", null, Map.of()).statusCode()).isEqualTo(401);
     assertThat(send("POST", "/api/v1/dms", null, Map.of()).statusCode()).isEqualTo(401);
     assertThat(MESSAGING.last()).isNull();
+  }
+
+  // Kịch bản: /api/v1/read-states/** tới notification, giữ Bearer, không JWT thì 401
+  // Input: GET /api/v1/read-states và PUT .../c1 có token hợp lệ; GET không Authorization
+  // Output: có token 200 từ notification giả đúng đường dẫn và Bearer; không token 401, không tới
+  @Test
+  void readStatesRouteGoesToNotificationAndRequiresJwt() throws Exception {
+    String token = JWT.token(UUID.randomUUID(), "alice");
+
+    HttpResponse<String> list = send("GET", "/api/v1/read-states", token, Map.of());
+    assertThat(list.statusCode()).isEqualTo(200);
+    assertThat(json(list).get("service").asText()).isEqualTo("notification");
+    assertThat(NOTIFICATION.last().path()).isEqualTo("/api/v1/read-states");
+    assertThat(NOTIFICATION.last().authorization()).isEqualTo("Bearer " + token);
+    HttpResponse<String> mark = send("PUT", "/api/v1/read-states/c1", token, Map.of());
+    assertThat(json(mark).get("service").asText()).isEqualTo("notification");
+    assertThat(NOTIFICATION.last().path()).isEqualTo("/api/v1/read-states/c1");
+
+    NOTIFICATION.reset();
+    HttpResponse<String> anonymous = send("GET", "/api/v1/read-states", null, Map.of());
+    assertThat(anonymous.statusCode()).isEqualTo(401);
+    assertThat(json(anonymous).get("code").asText()).isEqualTo("UNAUTHENTICATED");
+    assertThat(NOTIFICATION.last()).isNull();
   }
 
   // Gửi request tới gateway với method, token Bearer và header tùy chọn

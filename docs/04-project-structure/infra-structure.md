@@ -104,7 +104,7 @@ services:
         limits: { memory: 512m }
 ```
 
-Trong compose hiện tại chỉ `api-gateway` publish `127.0.0.1:8080`; identity và community không publish cổng ra host, gateway phụ thuộc identity, community và redis (`service_healthy`).
+Trong compose hiện tại chỉ `api-gateway` publish `127.0.0.1:8080`; các service còn lại không publish cổng ra host, gateway phụ thuộc identity, community, messaging, realtime-gateway, presence, notification và redis (`service_healthy`). `notification-service` lắng nghe HTTP 8086 và management 8186 (healthcheck `/actuator/health/readiness`), cần postgres, rabbitmq, identity (JWKS), không dùng gRPC hay Redis; gateway định tuyến bằng `NOTIFICATION_URI`.
 
 Thứ tự khởi động nhờ `depends_on: condition: service_healthy`: hạ tầng → identity → community → messaging → presence/notification → gateways → frontend. Nhưng service **vẫn phải tự chịu được** phụ thuộc chết sau khi đã chạy (retry kết nối, circuit breaker) — `depends_on` chỉ giúp lúc khởi động.
 
@@ -153,7 +153,7 @@ Kết quả: `messaging_svc` không đọc được `community.*` (thử `SELECT
 | `COMMUNITY_GRPC_TARGET`, `MESSAGING_GRPC_TARGET`, `IDENTITY_GRPC_TARGET` | service gọi gRPC | Dạng `dns:///community-service:9092` |
 | `REDIS_HOST` | api-gateway (rate limit) | `redis` trong compose |
 | `REDIS_PORT` | compose | Cổng publish Redis trên host (mặc định 6379), không phải cấu hình của gateway |
-| `IDENTITY_URI`, `COMMUNITY_URI` | api-gateway | Địa chỉ nội bộ để định tuyến, ví dụ `http://identity-service:8081`, `http://community-service:8082` |
+| `IDENTITY_URI`, `COMMUNITY_URI`, `NOTIFICATION_URI` | api-gateway | Địa chỉ nội bộ để định tuyến, ví dụ `http://identity-service:8081`, `http://community-service:8082`, `http://notification-service:8086` |
 | `JWKS_URI` | api-gateway, community-service | `http://identity-service:8081/.well-known/jwks.json` |
 | `CORS_ALLOWED_ORIGINS` | api-gateway, identity-service | identity-service dùng để kiểm Origin ở `/auth/refresh` (so khớp chuỗi chính xác) |
 | `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL` | frontend (build arg) | |

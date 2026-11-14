@@ -11,6 +11,7 @@ COPY services/community-service/pom.xml services/community-service/
 COPY services/messaging-service/pom.xml services/messaging-service/
 COPY services/realtime-gateway/pom.xml services/realtime-gateway/
 COPY services/presence-service/pom.xml services/presence-service/
+COPY services/notification-service/pom.xml services/notification-service/
 COPY gateways/pom.xml gateways/
 COPY gateways/api-gateway/pom.xml gateways/api-gateway/
 RUN --mount=type=cache,target=/root/.m2 ./mvnw -q -pl services/identity-service -am dependency:go-offline
