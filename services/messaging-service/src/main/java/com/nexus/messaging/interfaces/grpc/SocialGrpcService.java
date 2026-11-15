@@ -6,11 +6,11 @@ import com.nexus.messaging.application.social.ListFriendsQuery;
 import com.nexus.messaging.application.social.StreamAllDmChannelsQuery;
 import com.nexus.messaging.domain.shared.DomainValidationException;
 import com.nexus.messaging.domain.shared.UserId;
-import com.nexus.proto.messaging.v1.DmChannelRecord;
 import com.nexus.proto.messaging.v1.ListFriendIdsRequest;
 import com.nexus.proto.messaging.v1.ListFriendIdsResponse;
 import com.nexus.proto.messaging.v1.SocialServiceGrpc;
 import com.nexus.proto.messaging.v1.StreamAllDmChannelsRequest;
+import com.nexus.proto.messaging.v1.StreamAllDmChannelsResponse;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import org.springframework.stereotype.Service;
@@ -58,7 +58,7 @@ public class SocialGrpcService extends SocialServiceGrpc.SocialServiceImplBase {
   // Stream mọi kênh DM cho service caller, user JWT bị từ chối
   @Override
   public void streamAllDmChannels(
-      StreamAllDmChannelsRequest request, StreamObserver<DmChannelRecord> observer) {
+      StreamAllDmChannelsRequest request, StreamObserver<StreamAllDmChannelsResponse> observer) {
     if (GrpcAuth.callerService().isEmpty()) {
       observer.onError(
           GrpcStatuses.error(
@@ -68,7 +68,7 @@ public class SocialGrpcService extends SocialServiceGrpc.SocialServiceImplBase {
     streamDms.execute(
         c ->
             observer.onNext(
-                DmChannelRecord.newBuilder()
+                StreamAllDmChannelsResponse.newBuilder()
                     .setChannelId(c.id().toString())
                     .setUserLowId(c.pair().low().value().toString())
                     .setUserHighId(c.pair().high().value().toString())

@@ -8,12 +8,12 @@ import com.google.protobuf.Timestamp;
 import com.nexus.notification.NotificationIntegrationTest;
 import com.nexus.notification.NotificationServiceApplication;
 import com.nexus.notification.application.backfill.BackfillMembershipUseCase;
-import com.nexus.proto.community.v1.MemberRecord;
 import com.nexus.proto.community.v1.PermissionServiceGrpc;
 import com.nexus.proto.community.v1.StreamAllMembersRequest;
-import com.nexus.proto.messaging.v1.DmChannelRecord;
+import com.nexus.proto.community.v1.StreamAllMembersResponse;
 import com.nexus.proto.messaging.v1.SocialServiceGrpc;
 import com.nexus.proto.messaging.v1.StreamAllDmChannelsRequest;
+import com.nexus.proto.messaging.v1.StreamAllDmChannelsResponse;
 import com.rabbitmq.client.AMQP;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
@@ -254,7 +254,7 @@ class BackfillRolloutIT extends NotificationIntegrationTest {
     // Đếm lần gọi, đệm event vào queue đã khai báo rồi trả snapshot member
     @Override
     public void streamAllMembers(
-        StreamAllMembersRequest request, StreamObserver<MemberRecord> observer) {
+        StreamAllMembersRequest request, StreamObserver<StreamAllMembersResponse> observer) {
       if (MEMBER_CALLS.incrementAndGet() == 1) {
         bufferEvents();
       }
@@ -265,8 +265,8 @@ class BackfillRolloutIT extends NotificationIntegrationTest {
     }
 
     // Bản ghi member với joinedAt cũ
-    private static MemberRecord record(UUID server, UUID user) {
-      return MemberRecord.newBuilder()
+    private static StreamAllMembersResponse record(UUID server, UUID user) {
+      return StreamAllMembersResponse.newBuilder()
           .setServerId(server.toString())
           .setUserId(user.toString())
           .setJoinedAt(
@@ -284,10 +284,10 @@ class BackfillRolloutIT extends NotificationIntegrationTest {
     // Trả snapshot một kênh DM
     @Override
     public void streamAllDmChannels(
-        StreamAllDmChannelsRequest request, StreamObserver<DmChannelRecord> observer) {
+        StreamAllDmChannelsRequest request, StreamObserver<StreamAllDmChannelsResponse> observer) {
       DM_CALLS.incrementAndGet();
       observer.onNext(
-          DmChannelRecord.newBuilder()
+          StreamAllDmChannelsResponse.newBuilder()
               .setChannelId(DM.toString())
               .setUserLowId(A.toString())
               .setUserHighId(B.toString())
@@ -302,7 +302,7 @@ class BackfillRolloutIT extends NotificationIntegrationTest {
     // Đếm lần gọi rồi trả UNAVAILABLE
     @Override
     public void streamAllMembers(
-        StreamAllMembersRequest request, StreamObserver<MemberRecord> observer) {
+        StreamAllMembersRequest request, StreamObserver<StreamAllMembersResponse> observer) {
       UNAVAILABLE_CALLS.incrementAndGet();
       observer.onError(Status.UNAVAILABLE.asRuntimeException());
     }
@@ -314,7 +314,7 @@ class BackfillRolloutIT extends NotificationIntegrationTest {
     // Trả UNAVAILABLE
     @Override
     public void streamAllDmChannels(
-        StreamAllDmChannelsRequest request, StreamObserver<DmChannelRecord> observer) {
+        StreamAllDmChannelsRequest request, StreamObserver<StreamAllDmChannelsResponse> observer) {
       observer.onError(Status.UNAVAILABLE.asRuntimeException());
     }
   }

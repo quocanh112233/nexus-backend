@@ -32,7 +32,8 @@ public class GrpcMembershipSnapshotSource implements MembershipSnapshotSource {
     this.deadlineMillis = deadline.toMillis();
   }
 
-  // Stream StreamAllMembers, đổi từng MemberRecord sang MemberSnapshot với joinedAt thật
+  // Stream StreamAllMembers, đổi từng StreamAllMembersResponse sang MemberSnapshot với joinedAt
+  // thật
   @Override
   public void forEachMember(Consumer<MemberSnapshot> sink) {
     try {
@@ -51,7 +52,7 @@ public class GrpcMembershipSnapshotSource implements MembershipSnapshotSource {
     }
   }
 
-  // Stream StreamAllDmChannels, đổi từng DmChannelRecord sang DmSnapshot
+  // Stream StreamAllDmChannels, đổi từng StreamAllDmChannelsResponse sang DmSnapshot
   @Override
   public void forEachDm(Consumer<DmSnapshot> sink) {
     try {

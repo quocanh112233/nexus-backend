@@ -70,7 +70,7 @@ service PermissionService {
   rpc CheckChannelPermissions(CheckChannelPermissionsRequest) returns (CheckChannelPermissionsResponse);
   rpc CheckServerMembership(CheckServerMembershipRequest) returns (CheckServerMembershipResponse);
   rpc ListServerIdsForUser(ListServerIdsForUserRequest) returns (ListServerIdsForUserResponse);
-  rpc StreamAllMembers(StreamAllMembersRequest) returns (stream MemberRecord);
+  rpc StreamAllMembers(StreamAllMembersRequest) returns (stream StreamAllMembersResponse);
 }
 
 enum Permission {
@@ -111,7 +111,7 @@ message ListServerIdsForUserResponse {
 }
 
 message StreamAllMembersRequest {}
-message MemberRecord {
+message StreamAllMembersResponse {
   string server_id = 1;
   string user_id = 2;
   google.protobuf.Timestamp joined_at = 3;
@@ -133,12 +133,12 @@ message CheckChannelAccessResponse { bool can_view = 1; string server_id = 2; bo
 // Cung cấp danh sách bạn bè cho service cần dựng projection quan hệ
 service SocialService {
   rpc ListFriendIds(ListFriendIdsRequest) returns (ListFriendIdsResponse);
-  rpc StreamAllDmChannels(StreamAllDmChannelsRequest) returns (stream DmChannelRecord);
+  rpc StreamAllDmChannels(StreamAllDmChannelsRequest) returns (stream StreamAllDmChannelsResponse);
 }
 message ListFriendIdsRequest { string user_id = 1; }
 message ListFriendIdsResponse { repeated string friend_ids = 1; }
 message StreamAllDmChannelsRequest {}
-message DmChannelRecord { string channel_id = 1; string user_low_id = 2; string user_high_id = 3; }
+message StreamAllDmChannelsResponse { string channel_id = 1; string user_low_id = 2; string user_high_id = 3; }
 
 // Tra cứu thông tin công khai của user cho service khác
 service UserService {
