@@ -12,7 +12,7 @@ service PermissionService {
   rpc CheckChannelPermissions(CheckChannelPermissionsRequest) returns (CheckChannelPermissionsResponse);
   rpc CheckServerMembership(CheckServerMembershipRequest) returns (CheckServerMembershipResponse);
   rpc ListServerIdsForUser(ListServerIdsForUserRequest) returns (ListServerIdsForUserResponse);
-  rpc StreamAllMembers(StreamAllMembersRequest) returns (stream MemberRecord);
+  rpc StreamAllMembers(StreamAllMembersRequest) returns (stream StreamAllMembersResponse);
 }
 
 // Các quyền cấp kênh
@@ -63,7 +63,7 @@ message ListServerIdsForUserResponse {
 message StreamAllMembersRequest {}
 
 // Một thành viên của một server kèm thời điểm tham gia
-message MemberRecord {
+message StreamAllMembersResponse {
   string server_id = 1;
   string user_id = 2;
   google.protobuf.Timestamp joined_at = 3;

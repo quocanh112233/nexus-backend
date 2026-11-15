@@ -8,7 +8,7 @@ option java_package = "com.nexus.proto.messaging.v1";
 // Cung cấp danh sách bạn bè cho service cần dựng projection quan hệ, chỉ service caller được gọi
 service SocialService {
   rpc ListFriendIds(ListFriendIdsRequest) returns (ListFriendIdsResponse);
-  rpc StreamAllDmChannels(StreamAllDmChannelsRequest) returns (stream DmChannelRecord);
+  rpc StreamAllDmChannels(StreamAllDmChannelsRequest) returns (stream StreamAllDmChannelsResponse);
 }
 
 // Yêu cầu liệt kê id bạn bè của một user
@@ -25,7 +25,7 @@ message ListFriendIdsResponse {
 message StreamAllDmChannelsRequest {}
 
 // Một kênh DM cùng hai người tham gia đã chuẩn hóa low < high
-message DmChannelRecord {
+message StreamAllDmChannelsResponse {
   string channel_id = 1;
   string user_low_id = 2;
   string user_high_id = 3;

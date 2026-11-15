@@ -6,9 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.nexus.common.grpc.GrpcAuth;
 import com.nexus.messaging.MessagingIntegrationTest;
 import com.nexus.messaging.domain.social.DmChannelRepository;
-import com.nexus.proto.messaging.v1.DmChannelRecord;
 import com.nexus.proto.messaging.v1.SocialServiceGrpc;
 import com.nexus.proto.messaging.v1.StreamAllDmChannelsRequest;
+import com.nexus.proto.messaging.v1.StreamAllDmChannelsResponse;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.Metadata;
@@ -70,12 +70,12 @@ class SocialGrpcServiceStreamTest extends MessagingIntegrationTest {
             + " ('ffffffff-0000-0000-0000-' || lpad(g::text, 12, '0'))::uuid, now()"
             + " from generate_series(1, 2200) g");
 
-    List<DmChannelRecord> streamed = new ArrayList<>();
+    List<StreamAllDmChannelsResponse> streamed = new ArrayList<>();
     stub("dummy-notification")
         .streamAllDmChannels(StreamAllDmChannelsRequest.getDefaultInstance())
         .forEachRemaining(streamed::add);
 
-    List<String> ids = streamed.stream().map(DmChannelRecord::getChannelId).toList();
+    List<String> ids = streamed.stream().map(StreamAllDmChannelsResponse::getChannelId).toList();
     assertThat(ids)
         .hasSize(jdbc.queryForObject("select count(*) from messaging.dm_channels", int.class));
     assertThat(ids).hasSizeGreaterThanOrEqualTo(2200);

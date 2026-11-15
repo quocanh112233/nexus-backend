@@ -8,9 +8,9 @@ import com.nexus.community.CommunityIntegrationTest;
 import com.nexus.community.domain.member.MemberRepository;
 import com.nexus.proto.community.v1.CheckServerMembershipRequest;
 import com.nexus.proto.community.v1.ListServerIdsForUserRequest;
-import com.nexus.proto.community.v1.MemberRecord;
 import com.nexus.proto.community.v1.PermissionServiceGrpc;
 import com.nexus.proto.community.v1.StreamAllMembersRequest;
+import com.nexus.proto.community.v1.StreamAllMembersResponse;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.Metadata;
@@ -195,7 +195,7 @@ class PermissionGrpcServiceServiceTokenTest extends CommunityIntegrationTest {
             + " now() - g * interval '1 second' from generate_series(1, 2500) g",
         a, b, c);
 
-    List<MemberRecord> streamed = new ArrayList<>();
+    List<StreamAllMembersResponse> streamed = new ArrayList<>();
     stub(header(GrpcAuth.SERVICE_TOKEN, "dummy-notification"))
         .streamAllMembers(StreamAllMembersRequest.getDefaultInstance())
         .forEachRemaining(streamed::add);
