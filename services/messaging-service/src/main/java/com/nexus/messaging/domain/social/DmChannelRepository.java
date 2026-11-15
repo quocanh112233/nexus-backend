@@ -4,6 +4,7 @@ import com.nexus.messaging.domain.shared.ChannelId;
 import com.nexus.messaging.domain.shared.UserId;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 // Cổng lưu trữ kênh DM, DB bảo đảm mỗi cặp chỉ một kênh
 public interface DmChannelRepository {
@@ -19,4 +20,7 @@ public interface DmChannelRepository {
 
   // Các kênh DM có user tham gia, mới nhất trước
   List<DmChannel> listOf(UserId user);
+
+  // Lấy một lô kênh DM theo id tăng dần, afterId null là từ đầu
+  List<DmChannel> pageAll(UUID afterId, int limit);
 }

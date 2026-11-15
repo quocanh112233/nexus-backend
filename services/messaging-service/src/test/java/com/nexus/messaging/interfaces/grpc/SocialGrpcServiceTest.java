@@ -11,6 +11,7 @@ import com.nexus.common.grpc.AuthServerInterceptor;
 import com.nexus.common.grpc.GrpcAuth;
 import com.nexus.common.grpc.ServiceCaller;
 import com.nexus.messaging.application.social.ListFriendsQuery;
+import com.nexus.messaging.application.social.StreamAllDmChannelsQuery;
 import com.nexus.proto.messaging.v1.ChannelAccessServiceGrpc;
 import com.nexus.proto.messaging.v1.CheckChannelAccessRequest;
 import com.nexus.proto.messaging.v1.ListFriendIdsRequest;
@@ -70,7 +71,7 @@ class SocialGrpcServiceTest {
         InProcessServerBuilder.forName(name)
             .directExecutor()
             .intercept(new AuthServerInterceptor(decoder, callers))
-            .addService(new SocialGrpcService(query))
+            .addService(new SocialGrpcService(query, mock(StreamAllDmChannelsQuery.class)))
             .addService(new ChannelAccessGrpcService((u, c) -> null))
             .build()
             .start();

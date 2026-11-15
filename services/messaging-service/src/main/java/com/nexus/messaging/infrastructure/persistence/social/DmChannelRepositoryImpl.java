@@ -5,8 +5,10 @@ import com.nexus.messaging.domain.shared.UserId;
 import com.nexus.messaging.domain.social.DmChannel;
 import com.nexus.messaging.domain.social.DmChannelRepository;
 import com.nexus.messaging.domain.social.UserPair;
+import jakarta.persistence.EntityManager;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.stereotype.Repository;
 
 // Cài đặt DmChannelRepository, chèn bằng INSERT ... ON CONFLICT DO NOTHING
@@ -14,10 +16,12 @@ import org.springframework.stereotype.Repository;
 class DmChannelRepositoryImpl implements DmChannelRepository {
 
   private final DmChannelDao dao;
+  private final EntityManager entityManager;
 
-  // Nhận DAO qua constructor
-  DmChannelRepositoryImpl(DmChannelDao dao) {
+  // Nhận DAO và EntityManager qua constructor
+  DmChannelRepositoryImpl(DmChannelDao dao, EntityManager entityManager) {
     this.dao = dao;
+    this.entityManager = entityManager;
   }
 
   // Tìm kênh DM của cặp
@@ -49,6 +53,16 @@ class DmChannelRepositoryImpl implements DmChannelRepository {
         .stream()
         .map(this::toDomain)
         .toList();
+  }
+
+  // Phân trang keyset theo id, lô đầu dùng cận dưới UUID toàn 0, gỡ entity để bộ nhớ không tăng
+  @Override
+  public List<DmChannel> pageAll(UUID afterId, int limit) {
+    List<DmChannelJpaEntity> rows =
+        dao.pageAfter(afterId == null ? new UUID(0, 0) : afterId, limit);
+    List<DmChannel> batch = rows.stream().map(this::toDomain).toList();
+    rows.forEach(entityManager::detach);
+    return batch;
   }
 
   // Dựng lại kênh từ entity JPA, cặp đi qua UserPair.of để luôn chuẩn hóa

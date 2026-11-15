@@ -175,6 +175,9 @@ REST: `GET /api/v1/read-states`, `PUT /api/v1/read-states/{channelId}`. Nghe: `c
 
 Quy ước đã chốt:
 
+- Khởi động (B1): `BackfillRunner` (`SmartLifecycle`, chạy trước web server) khai báo queue, nạp snapshot một lần rồi mới start hai listener: Community `StreamAllMembers` (server, user, `joined_at`) và Messaging `StreamAllDmChannels` (kênh DM, hai participant) qua gRPC bằng `GRPC_TOKEN_NOTIFICATION`; xong thì ghi `backfill_state` dòng `membership-v1`, các lần khởi động sau bỏ qua. Nguồn lỗi thì thử lại 5 lần (chờ gấp đôi), hết lần thì service không khởi động. Notification vì thế phụ thuộc Community và Messaging lúc khởi động (compose `depends_on` healthy); `BACKFILL_ENABLED=false` để tắt. Giả định một instance (không khóa phân tán), chạy nhiều bản sao cần thêm khóa.
+- B3: `PUT /read-states/{channelId}` với kênh chưa có tin nào được theo dõi (`channel_activity` không có dòng hoặc đã xóa) trả 404.
+- B4: mention và unread chỉ tính tin gửi sau `joined_at` của user trong server (`wasMemberAt`); `joined_at` lấy từ event `MemberJoined` hoặc từ snapshot. Ceiling: so sánh theo đồng hồ giữa các service (`created_at` tin so với `joined_at`), lệch đồng hồ nhỏ có thể làm tin sát lúc vào bị tính sai một tin; DM không có ranh giới này.
 - D2: `MessageCreated` đẩy mốc đã đọc của chính tác giả lên tin đó (tin của mình không tính là chưa đọc), chỉ khi tác giả là member server hoặc participant DM.
 - D3: `MemberJoined` tạo read state cho mọi kênh đã có tin của server với mốc đã đọc là tin cuối, `mention_count = 0`; `ChannelCreated` không fan-out.
 - D7: `MessageCreated` tự upsert `channel_activity` nếu `ChannelCreated` chưa tới (hai queue không đảm bảo thứ tự); `MemberJoined` đến sau `MessageCreated` thì mention của tin đó rớt (ceiling đã chấp nhận); `MemberJoined` replay sau `ServerDeleted` (chỉ khi replay DLQ) làm kênh mồ côi truy cập lại được.

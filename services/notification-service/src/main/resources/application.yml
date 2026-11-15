@@ -11,6 +11,10 @@ spring:
         await-termination-period: 20s
   application:
     name: notification-service
+  # Service này chỉ là client gRPC, không mở server gRPC
+  grpc:
+    server:
+      enabled: false
   datasource:
     url: ${DB_URL}
     username: ${DB_USER}
@@ -51,6 +55,13 @@ nexus:
     relay:
       enabled: ${RELAY_ENABLED:true}
       exchange: notification.events
+  notification:
+    backfill:
+      # Nạp membership từ Community, Messaging một lần trước khi listener chạy (dòng membership-v1)
+      enabled: ${BACKFILL_ENABLED:true}
+      max-attempts: 5
+      retry-delay: 2s
+      rpc-deadline: 60s
 
 management:
   health:
@@ -78,6 +89,13 @@ app:
     jwks-read-timeout: ${JWKS_READ_TIMEOUT:5s}
     issuer: nexus-identity
     audience: nexus
+  grpc:
+    # Token của notification-service khi gọi Community và Messaging, lấy từ env
+    service-token: ${GRPC_TOKEN_NOTIFICATION:}
+    community:
+      target: ${COMMUNITY_GRPC_TARGET:dns:///localhost:9092}
+    messaging:
+      target: ${MESSAGING_GRPC_TARGET:dns:///localhost:9093}
 
 springdoc:
   swagger-ui:

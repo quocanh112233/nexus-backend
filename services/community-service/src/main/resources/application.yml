@@ -97,6 +97,10 @@ app:
         token: ${GRPC_TOKEN_MESSAGING:}
         methods:
           - nexus.community.v1.PermissionService/CheckChannelPermissions
+      notification-service:
+        token: ${GRPC_TOKEN_NOTIFICATION:}
+        methods:
+          - nexus.community.v1.PermissionService/StreamAllMembers
 
 springdoc:
   swagger-ui:

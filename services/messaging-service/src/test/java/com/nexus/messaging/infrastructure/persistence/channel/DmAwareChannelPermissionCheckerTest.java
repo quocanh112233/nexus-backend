@@ -200,6 +200,12 @@ class DmAwareChannelPermissionCheckerTest {
     public List<DmChannel> listOf(UserId user) {
       return List.of();
     }
+
+    // Không dùng trong test này
+    @Override
+    public List<DmChannel> pageAll(UUID afterId, int limit) {
+      return List.of();
+    }
   }
 
   // Kho bạn bè giả là một tập cặp

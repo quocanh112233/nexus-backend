@@ -88,19 +88,22 @@ interface ReadStateDao extends Repository<ReadStateJpaEntity, UUID> {
       nativeQuery = true)
   void deleteForServer(@Param("serverId") UUID serverId);
 
-  // Trả [channel_id, server_id, last_message_id, last_read, mention_count, unread] theo D1
+  // Trả [channel_id, server_id, last_message_id, last_read, mention_count, unread] theo D1+join
   @Query(
       value =
           "select ca.channel_id, ca.server_id, ca.last_message_id, rs.last_read_message_id,"
               + " coalesce(rs.mention_count, 0),"
-              + " (rs.last_read_message_id is null"
-              + " or ca.last_message_id > rs.last_read_message_id) as unread"
+              + " coalesce((rs.last_read_message_id is null"
+              + " or ca.last_message_id > rs.last_read_message_id)"
+              + " and (ca.server_id is null or ca.last_message_at >= sm.joined_at), false)"
+              + " as unread"
               + " from {h-schema}channel_activity ca"
               + " left join {h-schema}read_states rs"
               + " on rs.channel_id = ca.channel_id and rs.user_id = :userId"
+              + " left join {h-schema}server_members sm"
+              + " on sm.server_id = ca.server_id and sm.user_id = :userId"
               + " where ca.deleted_at is null and ca.last_message_id is not null"
-              + " and (exists (select 1 from {h-schema}server_members sm"
-              + " where sm.server_id = ca.server_id and sm.user_id = :userId)"
+              + " and (sm.user_id is not null"
               + " or exists (select 1 from {h-schema}dm_participants dp"
               + " where dp.channel_id = ca.channel_id and dp.user_id = :userId))"
               + " order by ca.channel_id",

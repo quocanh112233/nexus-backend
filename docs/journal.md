@@ -138,11 +138,13 @@ Script sau khi kill tự bật lại replica ở EXIT trap nên chạy lại li�
 - **Projection thay vì gọi đồng bộ**: notification-service không gọi service khác; unread suy ra từ `channel_activity` (từ `MessageCreated`), quyền mention từ `server_members` và `dm_participants` (từ `community.events`, `DmChannelCreated`). Hai queue riêng nên thứ tự giữa chúng không đảm bảo: `MessageCreated` tự upsert `channel_activity`, `ChannelDeleted` upsert tombstone, mốc đọc luôn dùng `GREATEST` (D7).
 - **Tác giả không tự có unread (D2)**: `MessageCreated` đẩy mốc đã đọc của tác giả lên chính tin đó nếu tác giả là member/participant. `MemberJoined` đặt mốc đọc là tin cuối của các kênh đã có tin nên tin cũ không hiện chưa đọc (D3).
 - **`mention_count` tính lại khi đọc (D5)**: `PUT` đặt mốc `GREATEST(cũ, mới)` rồi đếm lại các `mentions` có `message_id` lớn hơn mốc, nên đọc tới giữa kênh vẫn còn mention phía sau và mốc không lùi.
+- **Backfill lúc khởi động (B1)**: bản đầu chỉ dựng projection từ event nên membership và DM có từ trước P8 bị thiếu. Nay `BackfillRunner` khai báo queue, nạp snapshot qua gRPC `StreamAllMembers` (Community) và `StreamAllDmChannels` (Messaging, token `GRPC_TOKEN_NOTIFICATION`, phân trang keyset 1000 dòng), ghi `backfill_state` `membership-v1` rồi mới start listener; chạy trước web server, thử lại 5 lần rồi hỏng khởi động, giả định một instance. Đổi lại notification phụ thuộc Community và Messaging lúc khởi động.
+- **Ranh giới `joined_at` (B2, B4)**: mention và unread chỉ tính tin gửi sau lúc user vào server; `server_members.joined_at` đến từ event hoặc snapshot. `PUT` vào kênh chưa có tin nào được theo dõi trả 404 (B3).
 - **Gateway**: route `notification` (`/api/v1/read-states/**`) cùng rate limit 100 request/phút/user như presence, thêm route docs `/docs/notification/v3/api-docs`. Mọi service khác vẫn không publish cổng ra host.
 
 ### Rủi ro đã biết (P8)
 
-- `MemberJoined` đến sau `MessageCreated` (hai queue) làm rớt mention của tin đó; không bù lại (D7).
+- `MemberJoined` đến sau `MessageCreated` (hai queue) làm rớt mention của tin đó; không bù lại (D7). `joined_at` so với `created_at` của tin là so đồng hồ giữa các service nên có ceiling lệch đồng hồ (B4).
 - `MessageEdited`/`MessageDeleted` không xử lý nên unread/mention không giảm khi tin bị sửa hay xóa (D8).
 - `GET /read-states` không phân trang, chỉ trả kênh đã có tin (D10); thêm cursor khi số kênh mỗi user lớn.
 - `PUT /read-states` chấp nhận id UUID bất kỳ (chỉ ảnh hưởng read state của chính user).

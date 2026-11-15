@@ -91,13 +91,13 @@ class ApplyMessagingEventUseCaseTest {
   }
 
   // Kịch bản: mention member hợp lệ lần đầu
-  // Input: mention user member, insertIfAbsent true, addMentionCount trả 3
+  // Input: mention user có wasMemberAt true, insertIfAbsent true, addMentionCount trả 3
   // Output: insertIfAbsent → addMentionCount → publish MentionCreated mentionCount 3
   @Test
   void validMentionIncrementsAndPublishes() {
     first();
     UserId target = new UserId(UUID.randomUUID());
-    when(members.canAccess(target, scope)).thenReturn(true);
+    when(members.wasMemberAt(target, scope, AT)).thenReturn(true);
     when(mentions.insertIfAbsent(message, target, channel, server, author, AT)).thenReturn(true);
     when(readStates.addMentionCount(target, channel, message)).thenReturn(3);
 
@@ -112,7 +112,7 @@ class ApplyMessagingEventUseCaseTest {
   }
 
   // Kịch bản: mention người ngoài server
-  // Input: mention user có canAccess false
+  // Input: mention user có wasMemberAt false
   // Output: không insertIfAbsent, không addMentionCount, không publish
   @Test
   void mentionOfOutsiderIgnored() {
@@ -122,6 +122,39 @@ class ApplyMessagingEventUseCaseTest {
 
     verifyNoInteractions(mentions, publisher);
     verify(readStates, never()).addMentionCount(any(), any(), any());
+  }
+
+  // Kịch bản: tin gửi trước lúc user vào server đến muộn
+  // Input: mention user có wasMemberAt(createdAt của tin) false
+  // Output: không insertIfAbsent, không publish, vẫn recordMessage
+  @Test
+  void preJoinMentionIsIgnored() {
+    first();
+    UserId target = new UserId(UUID.randomUUID());
+    when(members.wasMemberAt(target, scope, AT)).thenReturn(false);
+
+    useCase.execute(message(serverUuid, List.of(target.value())));
+
+    verify(members).wasMemberAt(target, scope, AT);
+    verify(activity).recordMessage(channel, server, message, AT);
+    verifyNoInteractions(mentions, publisher);
+    verify(readStates, never()).addMentionCount(any(), any(), any());
+  }
+
+  // Kịch bản: tin gửi sau lúc user vào server
+  // Input: mention user có wasMemberAt(createdAt của tin) true, insertIfAbsent true
+  // Output: insertIfAbsent và publish MentionCreated với mentionCount 1
+  @Test
+  void postJoinMentionCounts() {
+    first();
+    UserId target = new UserId(UUID.randomUUID());
+    when(members.wasMemberAt(target, scope, AT)).thenReturn(true);
+    when(mentions.insertIfAbsent(message, target, channel, server, author, AT)).thenReturn(true);
+    when(readStates.addMentionCount(target, channel, message)).thenReturn(1);
+
+    useCase.execute(message(serverUuid, List.of(target.value())));
+
+    verify(publisher).publish(new MentionCreated(target, channel, server, message, author, 1));
   }
 
   // Kịch bản: tác giả tự mention mình
@@ -139,13 +172,13 @@ class ApplyMessagingEventUseCaseTest {
   }
 
   // Kịch bản: mention đã có từ event khác cùng messageId
-  // Input: mention member hợp lệ, insertIfAbsent false
+  // Input: mention user có wasMemberAt true, insertIfAbsent false
   // Output: không addMentionCount, không publish
   @Test
   void duplicateMentionDoesNotPublish() {
     first();
     UserId target = new UserId(UUID.randomUUID());
-    when(members.canAccess(target, scope)).thenReturn(true);
+    when(members.wasMemberAt(target, scope, AT)).thenReturn(true);
 
     useCase.execute(message(serverUuid, List.of(target.value())));
 
@@ -155,7 +188,7 @@ class ApplyMessagingEventUseCaseTest {
   }
 
   // Kịch bản: tin DM mention participant và một người ngoài (FR-093)
-  // Input: serverId null, mention participant (canAccess DM true) và người ngoài
+  // Input: serverId null, mention participant (wasMemberAt DM true) và người ngoài
   // Output: chỉ participant được insert, publish MentionCreated serverId null
   @Test
   void dmMessageMentionsParticipantOnly() {
@@ -163,7 +196,7 @@ class ApplyMessagingEventUseCaseTest {
     ChannelScope dm = new ChannelScope(channel, null);
     UserId peer = new UserId(UUID.randomUUID());
     UserId outsider = new UserId(UUID.randomUUID());
-    when(members.canAccess(peer, dm)).thenReturn(true);
+    when(members.wasMemberAt(peer, dm, AT)).thenReturn(true);
     when(mentions.insertIfAbsent(message, peer, channel, null, author, AT)).thenReturn(true);
     when(readStates.addMentionCount(peer, channel, message)).thenReturn(1);
 
@@ -208,6 +241,7 @@ class ApplyMessagingEventUseCaseTest {
     UserId low = new UserId(UUID.fromString("10000000-0000-0000-0000-000000000000"));
     UserId high = new UserId(UUID.fromString("90000000-0000-0000-0000-000000000000"));
     when(members.canAccess(any(), eq(scope))).thenReturn(true);
+    when(members.wasMemberAt(any(), eq(scope), eq(AT))).thenReturn(true);
     when(mentions.insertIfAbsent(any(), any(), any(), any(), any(), any())).thenReturn(true);
 
     useCase.execute(message(serverUuid, List.of(high.value(), low.value())));

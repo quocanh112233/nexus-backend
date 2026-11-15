@@ -236,7 +236,7 @@ class RepositoryIT extends NotificationIntegrationTest {
     ChannelId foreign = channel();
     ChannelId dm = channel();
     MessageId readMessage = message();
-    run(() -> members.addServerMember(s1, u, now()));
+    run(() -> members.addServerMember(s1, u, now().minusSeconds(3600)));
     run(() -> members.addDmParticipants(dm, u, user()));
     run(() -> activity.recordMessage(unread, s1, message(), now()));
     run(() -> activity.recordMessage(read, s1, readMessage, now()));
@@ -258,6 +258,29 @@ class RepositoryIT extends NotificationIntegrationTest {
         .filteredOn(r -> r.channelId().equals(read))
         .singleElement()
         .satisfies(r -> assertThat(r.lastReadMessageId()).isEqualTo(readMessage));
+  }
+
+  // Kịch bản: kênh server có last_message_id nhưng last_message_at NULL (seed tay)
+  // Input: member server, chèn channel_activity last_message_at null, chưa đọc; listFor
+  // Output: không ném lỗi, dòng của kênh có unread=false
+  @Test
+  void listForTreatsNullLastMessageAtAsRead() {
+    UserId u = user();
+    ServerId s = server();
+    ChannelId c = channel();
+    run(() -> members.addServerMember(s, u, now().minusSeconds(3600)));
+    jdbc.update(
+        "insert into notification.channel_activity"
+            + " (channel_id, server_id, last_message_id, last_message_at) values (?, ?, ?, null)",
+        c.value(),
+        s.value(),
+        message().value());
+
+    List<ChannelReadState> rows = readStates.listFor(u);
+
+    assertThat(rows)
+        .extracting(ChannelReadState::channelId, ChannelReadState::unread)
+        .containsExactly(tuple(c, false));
   }
 
   // Kịch bản: quyền truy cập theo thành viên server hoặc participant DM
@@ -285,6 +308,48 @@ class RepositoryIT extends NotificationIntegrationTest {
     assertThat(members.canAccess(other, serverChannel)).isTrue();
     run(() -> members.removeServer(s));
     assertThat(members.canAccess(other, serverChannel)).isFalse();
+  }
+
+  // Kịch bản: ranh giới join của member server, participant DM không có ranh giới
+  // Input: member join 11:00; wasMemberAt lúc 10:59:59 và 11:00; người ngoài; participant DM
+  // Output: false trước join, true từ lúc join, false cho người ngoài, true cho participant DM
+  @Test
+  void wasMemberAtRespectsJoinBoundary() {
+    ServerId s = server();
+    UserId member = user();
+    UserId stranger = user();
+    ChannelScope serverChannel = new ChannelScope(channel(), s);
+    ChannelScope dm = new ChannelScope(channel(), null);
+    Instant joined = Instant.parse("2026-11-14T11:00:00Z");
+    run(() -> members.addServerMember(s, member, joined));
+    run(() -> members.addDmParticipants(dm.id(), member, stranger));
+
+    assertThat(members.wasMemberAt(member, serverChannel, joined.minusSeconds(1))).isFalse();
+    assertThat(members.wasMemberAt(member, serverChannel, joined)).isTrue();
+    assertThat(members.wasMemberAt(stranger, serverChannel, joined.plusSeconds(60))).isFalse();
+    assertThat(members.wasMemberAt(member, dm, joined.minusSeconds(3600))).isTrue();
+    assertThat(members.wasMemberAt(user(), dm, joined.plusSeconds(60))).isFalse();
+  }
+
+  // Kịch bản: tin cũ hơn lúc join không làm kênh server unread, tin mới hơn thì có
+  // Input: member join 11:00; kênh old last_message_at 10:00; kênh fresh 11:30; chưa đọc cả hai
+  // Output: old unread=false, fresh unread=true
+  @Test
+  void listForIgnoresMessagesOlderThanJoin() {
+    UserId u = user();
+    ServerId s = server();
+    ChannelId old = channel();
+    ChannelId fresh = channel();
+    Instant joined = Instant.parse("2026-11-14T11:00:00Z");
+    run(() -> members.addServerMember(s, u, joined));
+    run(() -> activity.recordMessage(old, s, message(), joined.minusSeconds(3600)));
+    run(() -> activity.recordMessage(fresh, s, message(), joined.plusSeconds(1800)));
+
+    List<ChannelReadState> rows = readStates.listFor(u);
+
+    assertThat(rows)
+        .extracting(ChannelReadState::channelId, ChannelReadState::unread)
+        .containsExactlyInAnyOrder(tuple(old, false), tuple(fresh, true));
   }
 
   // Kịch bản: user rời server, chỉ state và mention của server đó bị xóa

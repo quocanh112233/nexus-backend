@@ -22,4 +22,7 @@ public interface MembershipRepository {
 
   // True nếu user là thành viên server của kênh hoặc participant DM
   boolean canAccess(UserId userId, ChannelScope scope);
+
+  // True nếu user đã là thành viên server (joined_at <= at) hoặc participant DM của kênh
+  boolean wasMemberAt(UserId userId, ChannelScope scope, Instant at);
 }

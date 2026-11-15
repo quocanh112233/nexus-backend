@@ -5,21 +5,31 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.nexus.common.grpc.GrpcAuth;
 import com.nexus.community.CommunityIntegrationTest;
+import com.nexus.community.domain.member.MemberRepository;
 import com.nexus.proto.community.v1.CheckServerMembershipRequest;
 import com.nexus.proto.community.v1.ListServerIdsForUserRequest;
+import com.nexus.proto.community.v1.MemberRecord;
 import com.nexus.proto.community.v1.PermissionServiceGrpc;
+import com.nexus.proto.community.v1.StreamAllMembersRequest;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.Metadata;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import io.grpc.stub.MetadataUtils;
+import jakarta.persistence.EntityManager;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import org.hibernate.Session;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,6 +38,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.grpc.server.lifecycle.GrpcServerLifecycle;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
 // Kiểm tra PermissionService với caller là service (x-service-token) trên gRPC và Postgres thật
@@ -36,13 +47,17 @@ import tools.jackson.databind.json.JsonMapper;
     properties = {
       "app.grpc.service-callers.realtime-gateway.token=dummy-realtime",
       "app.grpc.service-callers.presence-service.token=dummy-presence",
-      "app.grpc.service-callers.messaging-service.token=dummy-messaging"
+      "app.grpc.service-callers.messaging-service.token=dummy-messaging",
+      "app.grpc.service-callers.notification-service.token=dummy-notification"
     })
 class PermissionGrpcServiceServiceTokenTest extends CommunityIntegrationTest {
 
   private static final JsonMapper MAPPER = JsonMapper.builder().build();
 
   @Autowired private JdbcTemplate jdbc;
+  @Autowired private MemberRepository members;
+  @Autowired private EntityManager entityManager;
+  @Autowired private TransactionTemplate transaction;
   @LocalServerPort private int httpPort;
   @Autowired private GrpcServerLifecycle grpcServer;
 
@@ -164,6 +179,99 @@ class PermissionGrpcServiceServiceTokenTest extends CommunityIntegrationTest {
     assertThat(response.getServerId()).isEqualTo(server.toString());
     assertThat(response.getGrantedList())
         .contains(com.nexus.proto.community.v1.Permission.PERMISSION_VIEW_CHANNEL);
+  }
+
+  // Kịch bản: notification-service stream toàn bộ thành viên vượt một trang keyset
+  // Input: token notification, 3 server và 2500 dòng members thêm hàng loạt bằng SQL
+  // Output: đủ số bản ghi như DB, không trùng, đúng thứ tự khóa, joined_at khớp từng dòng
+  @Test
+  void streamAllMembersReturnsEveryMemberWithJoinedAt() {
+    UUID a = createServer();
+    UUID b = createServer();
+    UUID c = createServer();
+    jdbc.update(
+        "insert into community.members (server_id, user_id, joined_at)"
+            + " select (array[?, ?, ?]::uuid[])[1 + g % 3], gen_random_uuid(),"
+            + " now() - g * interval '1 second' from generate_series(1, 2500) g",
+        a, b, c);
+
+    List<MemberRecord> streamed = new ArrayList<>();
+    stub(header(GrpcAuth.SERVICE_TOKEN, "dummy-notification"))
+        .streamAllMembers(StreamAllMembersRequest.getDefaultInstance())
+        .forEachRemaining(streamed::add);
+
+    List<String> keys = streamed.stream().map(m -> m.getServerId() + ":" + m.getUserId()).toList();
+    assertThat(keys)
+        .hasSize(jdbc.queryForObject("select count(*) from community.members", int.class));
+    assertThat(new HashSet<>(keys)).hasSameSizeAs(keys);
+    assertThat(keys).isSorted();
+    assertThat(streamed).hasSizeGreaterThan(2500);
+    var expected =
+        jdbc.query(
+            "select server_id, user_id, joined_at from community.members",
+            (rs, i) ->
+                rs.getString(1)
+                    + ":"
+                    + rs.getString(2)
+                    + "@"
+                    + rs.getObject(3, OffsetDateTime.class).toInstant());
+    var actual =
+        streamed.stream()
+            .map(
+                m ->
+                    m.getServerId()
+                        + ":"
+                        + m.getUserId()
+                        + "@"
+                        + Instant.ofEpochSecond(
+                            m.getJoinedAt().getSeconds(), m.getJoinedAt().getNanos()))
+            .toList();
+    assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+  }
+
+  // Kịch bản: user thường gọi StreamAllMembers
+  // Input: Bearer của một user, không có service token
+  // Output: PERMISSION_DENIED
+  @Test
+  void streamAllMembersRejectsUserJwt() {
+    var stub = stub(header(GrpcAuth.AUTHORIZATION, bearer(UUID.randomUUID())));
+
+    assertThatThrownBy(
+            () -> stub.streamAllMembers(StreamAllMembersRequest.getDefaultInstance()).next())
+        .isInstanceOfSatisfying(
+            StatusRuntimeException.class,
+            e -> assertThat(e.getStatus().getCode()).isEqualTo(Status.Code.PERMISSION_DENIED));
+  }
+
+  // Kịch bản: service không có StreamAllMembers trong allowlist
+  // Input: token realtime-gateway gọi StreamAllMembers
+  // Output: PERMISSION_DENIED
+  @Test
+  void streamAllMembersRejectsServiceNotInAllowlist() {
+    var stub = stub(header(GrpcAuth.SERVICE_TOKEN, "dummy-realtime"));
+
+    assertThatThrownBy(
+            () -> stub.streamAllMembers(StreamAllMembersRequest.getDefaultInstance()).next())
+        .isInstanceOfSatisfying(
+            StatusRuntimeException.class,
+            e -> assertThat(e.getStatus().getCode()).isEqualTo(Status.Code.PERMISSION_DENIED));
+  }
+
+  // Kịch bản: duyệt một lô thành viên toàn cục trong transaction không được giữ entity trong bộ nhớ
+  // Input: một server có member, pageAll lô 1000 trong một transaction rồi đếm entity được quản lý
+  // Output: lô không rỗng và persistence context không còn entity nào
+  @Test
+  void pageAllDoesNotRetainEntitiesInPersistenceContext() {
+    joined(createServer());
+
+    int managed =
+        transaction.execute(
+            status -> {
+              assertThat(members.pageAll(null, null, 1000)).isNotEmpty();
+              return entityManager.unwrap(Session.class).getStatistics().getEntityCount();
+            });
+
+    assertThat(managed).isZero();
   }
 
   // Dựng metadata một header

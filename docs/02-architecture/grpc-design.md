@@ -15,6 +15,10 @@ Chỉ khi caller **cần câu trả lời để tiếp tục** và đó là **tr
 | `identity.v1.UserService/BatchGetUsers` | identity | (dự phòng, chưa dùng ở MVP) | | 500 ms |
 | `community.v1.PermissionService/ListServerIdsForUser` | community | presence | Nạp bù projection quan hệ (tập server của user) khi chưa có hoặc hết hạn (WF-10). **Hoãn sang P6** (thêm RPC là thay đổi tương thích); P4 chưa có RPC này trong proto | 500 ms |
 | `messaging.v1.SocialService/ListFriendIds` | messaging | presence | Nạp bù projection quan hệ (tập bạn của user) (WF-10) | 500 ms |
+| `community.v1.PermissionService/StreamAllMembers` | community | notification | Nạp snapshot membership (server, user, joined_at) một lần lúc khởi động; server-streaming, phân trang keyset 1000 dòng | không giới hạn theo luồng |
+| `messaging.v1.SocialService/StreamAllDmChannels` | messaging | notification | Nạp snapshot kênh DM (id và hai participant) một lần lúc khởi động; server-streaming, phân trang keyset 1000 dòng | không giới hạn theo luồng |
+
+Hai RPC `StreamAll*` chỉ để nạp ban đầu một lần: không có flow control, không dùng cho client không tin cậy.
 
 Kick/ban **không cần RPC**: kiểm tra ban khi join nằm trong Community (P-35).
 
@@ -59,11 +63,14 @@ package nexus.community.v1;
 option java_multiple_files = true;
 option java_package = "com.nexus.proto.community.v1";
 
+import "google/protobuf/timestamp.proto";
+
 // Trả lời câu hỏi quyền và tư cách thành viên, nguồn sự thật là Community
 service PermissionService {
   rpc CheckChannelPermissions(CheckChannelPermissionsRequest) returns (CheckChannelPermissionsResponse);
   rpc CheckServerMembership(CheckServerMembershipRequest) returns (CheckServerMembershipResponse);
   rpc ListServerIdsForUser(ListServerIdsForUserRequest) returns (ListServerIdsForUserResponse);
+  rpc StreamAllMembers(StreamAllMembersRequest) returns (stream MemberRecord);
 }
 
 enum Permission {
@@ -102,9 +109,16 @@ message ListServerIdsForUserRequest {
 message ListServerIdsForUserResponse {
   repeated string server_ids = 1;
 }
+
+message StreamAllMembersRequest {}
+message MemberRecord {
+  string server_id = 1;
+  string user_id = 2;
+  google.protobuf.Timestamp joined_at = 3;
+}
 ```
 
-P7 có `errors.proto`, `permission_service.proto` (3 RPC), `user_service.proto`, `channel_access_service.proto` và `social_service.proto` (`SocialService/ListFriendIds`). `CheckChannelAccess` trả `OK` với `can_view=false` (không `NOT_FOUND`) cho kênh không tồn tại, đã xóa hoặc user thiếu `VIEW_CHANNEL`, `server_id` chỉ có khi `can_view=true` và không phải DM (DM: `is_dm=true`, không có `server_id`); Community hoặc breaker lỗi → `UNAVAILABLE`.
+P7 có `errors.proto`, `permission_service.proto` (3 RPC, cộng `StreamAllMembers` ở P8), `user_service.proto`, `channel_access_service.proto` và `social_service.proto` (`SocialService/ListFriendIds`, cộng `StreamAllDmChannels` ở P8). `CheckChannelAccess` trả `OK` với `can_view=false` (không `NOT_FOUND`) cho kênh không tồn tại, đã xóa hoặc user thiếu `VIEW_CHANNEL`, `server_id` chỉ có khi `can_view=true` và không phải DM (DM: `is_dm=true`, không có `server_id`); Community hoặc breaker lỗi → `UNAVAILABLE`.
 
 File `messaging/v1/channel_access_service.proto`, `messaging/v1/social_service.proto` và `identity/v1/user_service.proto` (`BatchGetUsersRequest.user_ids` tối đa 100 phần tử; `granted` ở trên là các quyền kênh user có):
 
@@ -119,9 +133,12 @@ message CheckChannelAccessResponse { bool can_view = 1; string server_id = 2; bo
 // Cung cấp danh sách bạn bè cho service cần dựng projection quan hệ
 service SocialService {
   rpc ListFriendIds(ListFriendIdsRequest) returns (ListFriendIdsResponse);
+  rpc StreamAllDmChannels(StreamAllDmChannelsRequest) returns (stream DmChannelRecord);
 }
 message ListFriendIdsRequest { string user_id = 1; }
 message ListFriendIdsResponse { repeated string friend_ids = 1; }
+message StreamAllDmChannelsRequest {}
+message DmChannelRecord { string channel_id = 1; string user_low_id = 2; string user_high_id = 3; }
 
 // Tra cứu thông tin công khai của user cho service khác
 service UserService {
@@ -198,8 +215,10 @@ Cấu hình bind `app.grpc.service-callers.<tên>.{token,methods}`. Token chỉ 
 | Community | `realtime-gateway` | `GRPC_TOKEN_REALTIME` | `nexus.community.v1.PermissionService/CheckServerMembership` |
 | Community | `presence-service` | `GRPC_TOKEN_PRESENCE` | `nexus.community.v1.PermissionService/ListServerIdsForUser` |
 | Community | `messaging-service` | `GRPC_TOKEN_MESSAGING` | `nexus.community.v1.PermissionService/CheckChannelPermissions` |
+| Community | `notification-service` | `GRPC_TOKEN_NOTIFICATION` | `nexus.community.v1.PermissionService/StreamAllMembers` |
 | Messaging | `realtime-gateway` | `GRPC_TOKEN_REALTIME` | `nexus.messaging.v1.ChannelAccessService/CheckChannelAccess` |
 | Messaging | `presence-service` | `GRPC_TOKEN_PRESENCE` | `nexus.messaging.v1.SocialService/ListFriendIds` |
+| Messaging | `notification-service` | `GRPC_TOKEN_NOTIFICATION` | `nexus.messaging.v1.SocialService/StreamAllDmChannels` |
 | Identity | `messaging-service` | `GRPC_TOKEN_MESSAGING` | `nexus.identity.v1.UserService/GetUser` |
 
 Messaging gọi Identity `GetUser` (kết bạn, mở DM) theo cùng quy tắc: có JWT user trên đường REST thì chuyển tiếp JWT, `x-service-token` chỉ khi không có JWT. Chuỗi gateway → Messaging → Community: gateway gọi `CheckChannelAccess` bằng token của nó; Messaging gọi Community `CheckChannelPermissions` bằng token của chính Messaging. mTLS là backlog BL-13. `AuthServerInterceptor` cũng đặt MDC (`requestId`, `userId` hoặc `callerService`); `ExceptionMappingServerInterceptor` map exception → status.

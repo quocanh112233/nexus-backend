@@ -2,9 +2,11 @@ package com.nexus.community.infrastructure.persistence.member;
 
 import com.nexus.community.domain.member.Member;
 import com.nexus.community.domain.member.MemberRepository;
+import com.nexus.community.domain.member.MemberSnapshot;
 import com.nexus.community.domain.server.RoleId;
 import com.nexus.community.domain.server.ServerId;
 import com.nexus.community.domain.shared.UserId;
+import jakarta.persistence.EntityManager;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -19,11 +21,13 @@ class MemberRepositoryImpl implements MemberRepository {
 
   private final MemberDao dao;
   private final MemberRoleDao roleDao;
+  private final EntityManager entityManager;
 
-  // Nhận DAO qua constructor
-  MemberRepositoryImpl(MemberDao dao, MemberRoleDao roleDao) {
+  // Nhận DAO và EntityManager qua constructor
+  MemberRepositoryImpl(MemberDao dao, MemberRoleDao roleDao, EntityManager entityManager) {
     this.dao = dao;
     this.roleDao = roleDao;
+    this.entityManager = entityManager;
   }
 
   // Thêm bằng một câu INSERT ON CONFLICT DO NOTHING, true khi đúng một dòng được thêm
@@ -78,6 +82,20 @@ class MemberRepositoryImpl implements MemberRepository {
             : dao.findByIdServerIdAndIdUserIdGreaterThanOrderByIdUserIdAsc(
                 serverId.value(), afterUserId.value(), paging);
     return withRoles(rows);
+  }
+
+  // Phân trang keyset toàn bảng, lô đầu dùng cận dưới UUID toàn 0, gỡ entity để bộ nhớ không tăng
+  @Override
+  public List<MemberSnapshot> pageAll(ServerId afterServer, UserId afterUser, int limit) {
+    UUID server = afterServer == null ? new UUID(0, 0) : afterServer.value();
+    UUID user = afterUser == null ? new UUID(0, 0) : afterUser.value();
+    List<MemberJpaEntity> rows = dao.pageAfter(server, user, limit);
+    List<MemberSnapshot> batch =
+        rows.stream()
+            .map(e -> new MemberSnapshot(e.id.serverId(), e.id.userId(), e.joinedAt))
+            .toList();
+    rows.forEach(entityManager::detach);
+    return batch;
   }
 
   // Dựng aggregate từ các dòng thành viên cùng server, nạp role bằng một query

@@ -1,8 +1,10 @@
 package com.nexus.community.interfaces.grpc;
 
+import com.google.protobuf.Timestamp;
 import com.nexus.common.grpc.GrpcAuth;
 import com.nexus.common.grpc.GrpcStatuses;
 import com.nexus.community.application.channel.ChannelNotFoundException;
+import com.nexus.community.application.member.StreamAllMembersQuery;
 import com.nexus.community.application.server.ChannelPermissionResult;
 import com.nexus.community.application.server.CheckChannelPermissionsQuery;
 import com.nexus.community.application.server.CheckServerMembershipQuery;
@@ -18,7 +20,9 @@ import com.nexus.proto.community.v1.CheckServerMembershipRequest;
 import com.nexus.proto.community.v1.CheckServerMembershipResponse;
 import com.nexus.proto.community.v1.ListServerIdsForUserRequest;
 import com.nexus.proto.community.v1.ListServerIdsForUserResponse;
+import com.nexus.proto.community.v1.MemberRecord;
 import com.nexus.proto.community.v1.PermissionServiceGrpc;
+import com.nexus.proto.community.v1.StreamAllMembersRequest;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import java.util.List;
@@ -55,15 +59,18 @@ public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServi
   private final CheckChannelPermissionsQuery channelQuery;
   private final CheckServerMembershipQuery membershipQuery;
   private final ListMyServersQuery listServersQuery;
+  private final StreamAllMembersQuery streamMembersQuery;
 
-  // Nhận ba truy vấn của tầng application qua constructor
+  // Nhận bốn truy vấn của tầng application qua constructor
   public PermissionGrpcService(
       CheckChannelPermissionsQuery channelQuery,
       CheckServerMembershipQuery membershipQuery,
-      ListMyServersQuery listServersQuery) {
+      ListMyServersQuery listServersQuery,
+      StreamAllMembersQuery streamMembersQuery) {
     this.channelQuery = channelQuery;
     this.membershipQuery = membershipQuery;
     this.listServersQuery = listServersQuery;
+    this.streamMembersQuery = streamMembersQuery;
   }
 
   // Trả server chứa kênh và các quyền proto user có trên kênh
@@ -130,6 +137,30 @@ public class PermissionGrpcService extends PermissionServiceGrpc.PermissionServi
     } catch (io.grpc.StatusRuntimeException e) {
       observer.onError(e);
     }
+  }
+
+  // Stream mọi thành viên của mọi server cho service caller, user JWT bị từ chối
+  @Override
+  public void streamAllMembers(
+      StreamAllMembersRequest request, StreamObserver<MemberRecord> observer) {
+    if (GrpcAuth.callerService().isEmpty()) {
+      observer.onError(
+          GrpcStatuses.error(
+              Status.Code.PERMISSION_DENIED, DOMAIN, "PERMISSION_DENIED", "service caller only"));
+      return;
+    }
+    streamMembersQuery.execute(
+        m ->
+            observer.onNext(
+                MemberRecord.newBuilder()
+                    .setServerId(m.serverId().toString())
+                    .setUserId(m.userId().toString())
+                    .setJoinedAt(
+                        Timestamp.newBuilder()
+                            .setSeconds(m.joinedAt().getEpochSecond())
+                            .setNanos(m.joinedAt().getNano()))
+                    .build()));
+    observer.onCompleted();
   }
 
   // Phân tích user_id, service caller đã xác thực được hỏi về mọi user, user chỉ về chính mình

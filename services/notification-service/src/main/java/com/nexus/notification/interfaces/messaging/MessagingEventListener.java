@@ -21,8 +21,11 @@ public class MessagingEventListener {
     this.useCase = useCase;
   }
 
-  // Đọc envelope, tách event rồi áp dụng, lỗi parse thì reject không requeue để vào DLQ ngay
-  @RabbitListener(queues = "notification.messaging.events")
+  // Đọc envelope rồi áp dụng, lỗi parse thì vào DLQ ngay; BackfillRunner start sau khi nạp xong
+  @RabbitListener(
+      id = "messaging-events",
+      queues = "notification.messaging.events",
+      autoStartup = "false")
   public void on(Message message) {
     MessagingEvent event;
     try {

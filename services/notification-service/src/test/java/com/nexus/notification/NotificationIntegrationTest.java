@@ -7,10 +7,11 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
 
-// Lớp cha IT notification: Postgres và JWKS giả dùng chung cả JVM, relay và AMQP mặc định tắt
+// Lớp cha IT notification: Postgres, JWKS giả dùng chung cả JVM, relay, AMQP, backfill mặc định tắt
 @TestPropertySource(
     properties = {
       "nexus.messaging.relay.enabled=false",
+      "nexus.notification.backfill.enabled=false",
       "spring.rabbitmq.listener.simple.auto-startup=false"
     })
 public abstract class NotificationIntegrationTest extends PostgresIntegrationTest {

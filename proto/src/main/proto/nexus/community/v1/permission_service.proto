@@ -5,11 +5,14 @@ package nexus.community.v1;
 option java_multiple_files = true;
 option java_package = "com.nexus.proto.community.v1";
 
+import "google/protobuf/timestamp.proto";
+
 // Trả lời câu hỏi quyền và tư cách thành viên, nguồn sự thật là Community
 service PermissionService {
   rpc CheckChannelPermissions(CheckChannelPermissionsRequest) returns (CheckChannelPermissionsResponse);
   rpc CheckServerMembership(CheckServerMembershipRequest) returns (CheckServerMembershipResponse);
   rpc ListServerIdsForUser(ListServerIdsForUserRequest) returns (ListServerIdsForUserResponse);
+  rpc StreamAllMembers(StreamAllMembersRequest) returns (stream MemberRecord);
 }
 
 // Các quyền cấp kênh
@@ -54,4 +57,14 @@ message ListServerIdsForUserRequest {
 // Id mọi server user là thành viên
 message ListServerIdsForUserResponse {
   repeated string server_ids = 1;
+}
+
+// Yêu cầu stream toàn bộ thành viên mọi server, chỉ service caller được gọi
+message StreamAllMembersRequest {}
+
+// Một thành viên của một server kèm thời điểm tham gia
+message MemberRecord {
+  string server_id = 1;
+  string user_id = 2;
+  google.protobuf.Timestamp joined_at = 3;
 }

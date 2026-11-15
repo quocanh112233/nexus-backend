@@ -31,4 +31,10 @@ interface DmChannelDao extends JpaRepository<DmChannelJpaEntity, UUID> {
   // Kênh có user ở một trong hai phía, mới nhất trước, trùng giờ thì id lớn trước
   List<DmChannelJpaEntity> findByUserLowIdOrUserHighIdOrderByCreatedAtDescIdDesc(
       UUID userLowId, UUID userHighId);
+
+  // Lô kênh DM có id lớn hơn after theo id tăng dần
+  @Query(
+      value = "select * from {h-schema}dm_channels where id > :after order by id limit :limit",
+      nativeQuery = true)
+  List<DmChannelJpaEntity> pageAfter(@Param("after") UUID after, @Param("limit") int limit);
 }

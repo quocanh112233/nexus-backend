@@ -21,8 +21,11 @@ public class CommunityEventListener {
     this.useCase = useCase;
   }
 
-  // Đọc envelope, tách event rồi áp dụng, lỗi parse thì reject không requeue để vào DLQ ngay
-  @RabbitListener(queues = "notification.community.events")
+  // Đọc envelope rồi áp dụng, lỗi parse thì vào DLQ ngay; BackfillRunner start sau khi nạp xong
+  @RabbitListener(
+      id = "community-events",
+      queues = "notification.community.events",
+      autoStartup = "false")
   public void on(Message message) {
     CommunityEvent event;
     try {

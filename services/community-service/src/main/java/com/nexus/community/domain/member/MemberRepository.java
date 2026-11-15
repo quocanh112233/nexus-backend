@@ -28,4 +28,7 @@ public interface MemberRepository {
 
   // Lấy một trang thành viên theo user_id tăng dần, afterUserId null là trang đầu
   List<Member> page(ServerId serverId, UserId afterUserId, int limit);
+
+  // Lấy một lô thành viên mọi server theo (server_id, user_id) tăng dần, null là từ đầu
+  List<MemberSnapshot> pageAll(ServerId afterServer, UserId afterUser, int limit);
 }

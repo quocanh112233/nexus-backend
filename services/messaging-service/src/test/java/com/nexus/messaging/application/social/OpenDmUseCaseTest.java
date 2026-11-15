@@ -176,6 +176,12 @@ class OpenDmUseCaseTest {
     public List<DmChannel> listOf(UserId user) {
       return byPair.values().stream().filter(c -> c.pair().contains(user)).toList();
     }
+
+    // Không dùng trong test này
+    @Override
+    public List<DmChannel> pageAll(UUID afterId, int limit) {
+      return List.of();
+    }
   }
 
   // Repository channel_refs giả chỉ ghi nhớ các kênh DM đã upsert

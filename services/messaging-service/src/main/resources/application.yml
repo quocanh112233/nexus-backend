@@ -104,6 +104,10 @@ app:
         token: ${GRPC_TOKEN_PRESENCE:}
         methods:
           - nexus.messaging.v1.SocialService/ListFriendIds
+      notification-service:
+        token: ${GRPC_TOKEN_NOTIFICATION:}
+        methods:
+          - nexus.messaging.v1.SocialService/StreamAllDmChannels
     community:
       target: ${COMMUNITY_GRPC_TARGET:dns:///localhost:9092}
       deadline: 300ms

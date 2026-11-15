@@ -332,11 +332,11 @@ class ReadStateApiIT extends NotificationIntegrationTest {
     return new UUID(((long) prefix << 56) | 0x7000L, 0x8000_0000_0000_0001L);
   }
 
-  // Seed thành viên server bằng SQL
+  // Seed thành viên server bằng SQL, join sớm hơn mọi tin được seed
   private void member(UUID server, UUID user) {
     jdbc.update(
         "insert into notification.server_members (server_id, user_id, joined_at)"
-            + " values (?, ?, now())",
+            + " values (?, ?, now() - interval '1 hour')",
         server,
         user);
   }

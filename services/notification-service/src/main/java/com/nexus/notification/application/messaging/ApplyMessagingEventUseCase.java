@@ -12,6 +12,7 @@ import com.nexus.notification.domain.shared.ChannelId;
 import com.nexus.notification.domain.shared.MessageId;
 import com.nexus.notification.domain.shared.ServerId;
 import com.nexus.notification.domain.shared.UserId;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -79,7 +80,7 @@ public class ApplyMessagingEventUseCase {
     event.mentionUserIds().stream()
         .distinct()
         .map(UserId::new)
-        .filter(user -> !user.equals(author) && canBeMentioned(user, scope))
+        .filter(user -> !user.equals(author) && canBeMentioned(user, scope, event.createdAt()))
         .forEach(user -> users.put(user.value().toString(), user));
     for (UserId user : users.values()) {
       if (user.equals(author)) {
@@ -92,8 +93,8 @@ public class ApplyMessagingEventUseCase {
     }
   }
 
-  // Member server hoặc participant DM; ponytail: mention rớt nếu MemberJoined chưa tới
-  private boolean canBeMentioned(UserId user, ChannelScope scope) {
-    return members.canAccess(user, scope);
+  // Member server đã join lúc tin gửi hoặc participant DM; ponytail: rớt nếu MemberJoined chưa tới
+  private boolean canBeMentioned(UserId user, ChannelScope scope, Instant createdAt) {
+    return members.wasMemberAt(user, scope, createdAt);
   }
 }

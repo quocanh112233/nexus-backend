@@ -163,6 +163,61 @@ class MessagingEventListenerIT extends NotificationIntegrationTest {
         .isEqualTo("mention.created");
   }
 
+  // Kịch bản: tin gửi trước lúc join đến muộn sau MemberJoined
+  // Input: MemberJoined 11:00 rồi MessageCreated createdAt 10:00 mention user đó
+  // Output: không dòng mention_count, outbox không có MentionCreated, GET unread=false
+  @Test
+  void delayedPreJoinMessageDoesNotMentionNewMember() {
+    UUID server = UUID.randomUUID();
+    UUID channel = UUID.randomUUID();
+    UUID user = UUID.randomUUID();
+    UUID eventId = UUID.randomUUID();
+    Instant joined = Instant.parse("2026-11-14T11:00:00Z");
+    join(server, user, joined);
+
+    messageAt(
+        joined.minusSeconds(3600),
+        eventId,
+        UUID.randomUUID(),
+        channel,
+        server,
+        UUID.randomUUID(),
+        user);
+
+    awaitProcessed(eventId);
+    assertThat(count("mentions", "user_id", user)).isZero();
+    assertThat(count("read_states", "user_id", user)).isZero();
+    assertThat(mentionOutbox(user)).isZero();
+    assertThat(state(user, channel).unread()).isFalse();
+  }
+
+  // Kịch bản: giao đảo thứ tự, tin 11:30 đến trước MemberJoined 11:00 (ceiling D7)
+  // Input: MessageCreated createdAt 11:30 mention user, xử lý xong rồi mới MemberJoined 11:00
+  // Output: mention bị bỏ vì lúc tin tới user chưa là member: không mention, không MentionCreated
+  @Test
+  void lateJoinAfterPostJoinMessageDropsMention() {
+    UUID server = UUID.randomUUID();
+    UUID channel = UUID.randomUUID();
+    UUID user = UUID.randomUUID();
+    UUID eventId = UUID.randomUUID();
+    Instant joined = Instant.parse("2026-11-14T11:00:00Z");
+    messageAt(
+        joined.plusSeconds(1800),
+        eventId,
+        UUID.randomUUID(),
+        channel,
+        server,
+        UUID.randomUUID(),
+        user);
+    awaitProcessed(eventId);
+
+    join(server, user, joined);
+
+    assertThat(count("mentions", "user_id", user)).isZero();
+    assertThat(mentionOutbox(user)).isZero();
+    assertThat(count("server_members", "user_id", user)).isEqualTo(1);
+  }
+
   // Kịch bản: user đã đọc qua tin được mention
   // Input: read_states của target có last_read lớn hơn messageId, rồi MessageCreated mention target
   // Output: mention_count vẫn 0, dòng mentions vẫn có
@@ -285,18 +340,30 @@ class MessagingEventListenerIT extends NotificationIntegrationTest {
     return UUID.fromString("00" + UUID.randomUUID().toString().substring(2));
   }
 
-  // Seed thành viên server trực tiếp bằng SQL
+  // Seed thành viên server trực tiếp bằng SQL, join sớm hơn mọi tin của test
   private void member(UUID server, UUID user) {
     jdbc.update(
         "insert into notification.server_members (server_id, user_id, joined_at)"
-            + " values (?, ?, now())",
+            + " values (?, ?, now() - interval '1 hour')",
         server,
         user);
   }
 
-  // Publish MessageCreated lên messaging.events, serverId null nghĩa là tin DM
+  // Publish MessageCreated createdAt = bây giờ, serverId null nghĩa là tin DM
   private void message(
       UUID eventId, UUID messageId, UUID channel, UUID server, UUID author, UUID... mentions) {
+    messageAt(Instant.now(), eventId, messageId, channel, server, author, mentions);
+  }
+
+  // Publish MessageCreated lên messaging.events với createdAt cho trước
+  private void messageAt(
+      Instant createdAt,
+      UUID eventId,
+      UUID messageId,
+      UUID channel,
+      UUID server,
+      UUID author,
+      UUID... mentions) {
     Map<String, Object> payload = new HashMap<>();
     payload.put("messageId", messageId);
     payload.put("channelId", channel);
@@ -304,8 +371,22 @@ class MessagingEventListenerIT extends NotificationIntegrationTest {
     payload.put("authorId", author);
     payload.put("content", "hi");
     payload.put("mentionUserIds", List.of(mentions));
-    payload.put("createdAt", Instant.now().toString());
+    payload.put("createdAt", createdAt.toString());
     send("messaging.events", "message.created", eventId, "MessageCreated", payload);
+  }
+
+  // Publish MemberJoined lên community.events rồi chờ listener community xử lý xong
+  private void join(UUID server, UUID user, Instant joinedAt) {
+    UUID eventId = UUID.randomUUID();
+    send(
+        "community.events",
+        "member.joined",
+        eventId,
+        "MemberJoined",
+        Map.of("serverId", server, "userId", user, "joinedAt", joinedAt.toString()));
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .until(() -> processedCount(eventId, "notification.community.events") == 1);
   }
 
   // Chạy các lần publish trên cùng một channel AMQP để broker nhận đúng thứ tự

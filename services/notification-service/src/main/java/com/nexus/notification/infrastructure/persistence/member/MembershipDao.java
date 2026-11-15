@@ -60,4 +60,19 @@ interface MembershipDao extends Repository<ReadStateJpaEntity, UUID> {
       @Param("userId") UUID userId,
       @Param("channelId") UUID channelId,
       @Param("serverId") UUID serverId);
+
+  // True nếu user vào server từ lúc at trở về trước hoặc là participant DM của kênh
+  @Query(
+      value =
+          "select exists (select 1 from {h-schema}server_members"
+              + " where server_id = cast(:serverId as uuid) and user_id = :userId"
+              + " and joined_at <= :at)"
+              + " or exists (select 1 from {h-schema}dm_participants"
+              + " where channel_id = :channelId and user_id = :userId)",
+      nativeQuery = true)
+  boolean wasMemberAt(
+      @Param("userId") UUID userId,
+      @Param("channelId") UUID channelId,
+      @Param("serverId") UUID serverId,
+      @Param("at") Instant at);
 }

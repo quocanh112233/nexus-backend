@@ -51,4 +51,14 @@ class MembershipRepositoryImpl implements MembershipRepository {
         scope.id().value(),
         scope.serverId() == null ? null : scope.serverId().value());
   }
+
+  // Kiểm member tại thời điểm at bằng EXISTS so joined_at ở SQL
+  @Override
+  public boolean wasMemberAt(UserId userId, ChannelScope scope, Instant at) {
+    return dao.wasMemberAt(
+        userId.value(),
+        scope.id().value(),
+        scope.serverId() == null ? null : scope.serverId().value(),
+        at);
+  }
 }

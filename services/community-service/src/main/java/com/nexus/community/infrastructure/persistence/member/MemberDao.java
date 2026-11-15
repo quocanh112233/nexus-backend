@@ -43,4 +43,13 @@ interface MemberDao extends JpaRepository<MemberJpaEntity, MemberKey> {
   // Trang kế tiếp gồm thành viên có user_id lớn hơn after
   List<MemberJpaEntity> findByIdServerIdAndIdUserIdGreaterThanOrderByIdUserIdAsc(
       UUID serverId, UUID after, Pageable pageable);
+
+  // Lô thành viên mọi server có khóa (server_id, user_id) lớn hơn cặp cho trước
+  @Query(
+      value =
+          "select * from {h-schema}members where (server_id, user_id) > (:serverId, :userId)"
+              + " order by server_id, user_id limit :limit",
+      nativeQuery = true)
+  List<MemberJpaEntity> pageAfter(
+      @Param("serverId") UUID serverId, @Param("userId") UUID userId, @Param("limit") int limit);
 }

@@ -51,6 +51,7 @@ services:
       GRPC_TOKEN_REALTIME: ${GRPC_TOKEN_REALTIME:?}
       GRPC_TOKEN_PRESENCE: ${GRPC_TOKEN_PRESENCE:?}
       GRPC_TOKEN_MESSAGING: ${GRPC_TOKEN_MESSAGING:?}
+      GRPC_TOKEN_NOTIFICATION: ${GRPC_TOKEN_NOTIFICATION:?}
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_USER: ${RABBITMQ_ADMIN_USER:?}
       RABBITMQ_PASSWORD: ${RABBITMQ_ADMIN_PASSWORD:?}
@@ -79,6 +80,8 @@ services:
       GRPC_TOKEN_REALTIME: ${GRPC_TOKEN_REALTIME:?}
       # Allowlist presence-service gọi SocialService/ListFriendIds; Identity là nguồn tên user cho DM/bạn bè
       GRPC_TOKEN_PRESENCE: ${GRPC_TOKEN_PRESENCE:?}
+      # Allowlist notification-service gọi SocialService/StreamAllDmChannels lúc backfill
+      GRPC_TOKEN_NOTIFICATION: ${GRPC_TOKEN_NOTIFICATION:?}
       IDENTITY_GRPC_TARGET: dns:///identity-service:9091
       REDIS_HOST: redis
       # ponytail: key Cloudinary rỗng = upload đính kèm chưa dùng được, điền .env khi cần
@@ -163,6 +166,10 @@ services:
       DB_USER: notification_svc
       DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?}
       JWKS_URI: http://identity-service:8081/.well-known/jwks.json
+      # Backfill membership lúc khởi động: gọi Community StreamAllMembers và Messaging StreamAllDmChannels
+      COMMUNITY_GRPC_TARGET: dns:///community-service:9092
+      MESSAGING_GRPC_TARGET: dns:///messaging-service:9093
+      GRPC_TOKEN_NOTIFICATION: ${GRPC_TOKEN_NOTIFICATION:?}
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_USER: ${RABBITMQ_ADMIN_USER:?}
       RABBITMQ_PASSWORD: ${RABBITMQ_ADMIN_PASSWORD:?}
@@ -171,6 +178,8 @@ services:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
       identity-service: { condition: service_healthy }
+      community-service: { condition: service_healthy }
+      messaging-service: { condition: service_healthy }
     deploy:
       resources:
         limits: { memory: 512m }
