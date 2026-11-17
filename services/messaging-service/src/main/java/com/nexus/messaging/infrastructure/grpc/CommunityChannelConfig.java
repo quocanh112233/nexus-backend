@@ -164,7 +164,7 @@ public class CommunityChannelConfig {
     return new DmAwareChannelPermissionChecker(channelRefs, dms, friendships, serverChecker);
   }
 
-  // Checker mặc định cho REST và message: DM tính trước cache, kênh server qua cache Redis
+  // Checker mặc định cho REST và message: DM tính trước, kênh server qua cache Redis nếu bật cờ
   @Bean
   @Primary
   ChannelPermissionChecker channelPermissionChecker(
@@ -174,11 +174,12 @@ public class CommunityChannelConfig {
       FriendshipRepository friendships,
       StringRedisTemplate redis,
       MeterRegistry registry,
-      @Value("${app.cache.permission-ttl:60s}") Duration ttl) {
-    return new DmAwareChannelPermissionChecker(
-        channelRefs,
-        dms,
-        friendships,
-        new CachingChannelPermissionChecker(serverChecker, redis, registry, ttl));
+      @Value("${app.cache.permission-ttl:60s}") Duration ttl,
+      @Value("${app.cache.permission-enabled:true}") boolean cacheEnabled) {
+    ChannelPermissionChecker server =
+        cacheEnabled
+            ? new CachingChannelPermissionChecker(serverChecker, redis, registry, ttl)
+            : serverChecker;
+    return new DmAwareChannelPermissionChecker(channelRefs, dms, friendships, server);
   }
 }

@@ -1,0 +1,7 @@
+# Provider dashboard cho otel-lgtm: mount file này vào /otel-lgtm/grafana/conf/provisioning/dashboards/ (alert vào .../provisioning/alerting/), cấu hình Prometheus thay /otel-lgtm/prometheus.yaml, otelcol ở /otel-lgtm/otelcol-config.yaml không đổi.
+apiVersion: 1
+providers:
+  - name: nexus
+    type: file
+    options:
+      path: /otel-lgtm/nexus-overview.json

@@ -7,15 +7,15 @@ File này là checklist để Nexus trở thành dự án portfolio thuyết ph�
 ### README gốc `nexus-backend` (thứ người xem mở đầu tiên)
 
 - [ ] Một câu mô tả + GIF demo 20-30 s (2 trình duyệt chat realtime).
-- [ ] Sơ đồ kiến trúc (Mermaid từ [component-diagram.md](../03-diagrams/component-diagram.md)).
-- [ ] Bảng "dùng gRPC ở đâu, event ở đâu, vì sao" (rút từ [architecture-overview.md](../02-architecture/architecture-overview.md#4-khi-nào-dùng-grpc-khi-nào-dùng-event)).
-- [ ] **Chạy bằng một lệnh:** `cp .env.example .env && ./infra/scripts/gen-jwt-keys.sh && docker compose up -d --build` → mở `http://localhost:3000`. Có tài khoản demo seed sẵn.
-- [ ] Badge CI cho từng service + coverage.
-- [ ] Link: Swagger UI qua gateway, RabbitMQ UI, Grafana (với profile observability).
+- [x] Sơ đồ kiến trúc (Mermaid từ [component-diagram.md](../03-diagrams/component-diagram.md)).
+- [x] Bảng "dùng gRPC ở đâu, event ở đâu, vì sao" (rút từ [architecture-overview.md](../02-architecture/architecture-overview.md#4-khi-nào-dùng-grpc-khi-nào-dùng-event)).
+- [ ] **Chạy bằng một lệnh:** `cp .env.example .env && ./infra/scripts/gen-jwt-keys.sh && docker compose up -d --build` → mở `http://localhost:3000`. Có tài khoản demo seed sẵn. *(P9: lệnh backend có trong README; chưa có frontend `:3000` và tài khoản demo seed sẵn)*
+- [ ] Badge CI cho từng service + coverage. *(P9: đã có badge 7 service + `proto` + `repo-checks`; chưa có badge coverage vì JaCoCo chưa cấu hình trong CI)*
+- [x] Link: Swagger UI qua gateway, RabbitMQ UI, Grafana (với profile observability).
 - [ ] Ảnh chụp một trace end-to-end trên Grafana Tempo (REST → gRPC → RabbitMQ → WebSocket).
-- [ ] Bảng kết quả k6 (link `docs/perf/`).
-- [ ] Mục "Thí nghiệm độ bền": tắt Community, gửi event trùng, kill consumer — kèm kết quả quan sát được.
-- [ ] Link ADR và tài liệu thiết kế.
+- [x] Bảng kết quả k6 (link `docs/perf/`).
+- [x] Mục "Thí nghiệm độ bền": tắt Community, gửi event trùng, kill consumer — kèm kết quả quan sát được.
+- [x] Link ADR và tài liệu thiết kế.
 
 ### Code và kỹ thuật
 

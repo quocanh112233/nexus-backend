@@ -85,6 +85,7 @@ management:
 app:
   cache:
     permission-ttl: 60s
+    permission-enabled: ${PERMISSION_CACHE_ENABLED:true}
   jwt:
     jwks-uri: ${JWKS_URI}
     jwks-connect-timeout: ${JWKS_CONNECT_TIMEOUT:2s}

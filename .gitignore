@@ -10,3 +10,4 @@ compose.override.yaml
 .settings/
 .DS_Store
 *.pem
+infra/perf/.state/

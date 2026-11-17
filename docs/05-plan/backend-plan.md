@@ -222,14 +222,14 @@ Ký hiệu: `[ ]` việc cần làm, `[x]` đã xong — "→" tiêu chí xong.
 
 | # | Việc | Tiêu chí xong |
 |---|------|---------------|
-| 1 | Script seed 1 triệu tin vào 1 kênh | Chạy < 5 phút |
-| 2 | `EXPLAIN ANALYZE` keyset vs `OFFSET` (NFR-003) | Bảng số liệu trong `docs/perf/history.md` |
-| 3 | k6 `send-message.js` (NFR-001), `ws-fanout.js` (NFR-002) | Báo cáo p95, throughput, cấu hình máy trong `docs/perf/` |
-| 4 | So sánh có/không cache quyền Redis | Số liệu p95 + số gRPC call/giây |
-| 5 | Rate limit gửi tin (NFR-013) | k6 vượt ngưỡng → 429 |
-| 6 | Dashboard "Nexus overview" + 3 alert đơn giản | JSON commit trong repo |
-| 7 | Giới hạn bộ nhớ container (NFR-005) | `docker stats` tổng ≤ 6 GB |
-| 8 | README, ảnh trace, GIF, ADR hoàn chỉnh; demo công khai | Đạt [portfolio-readiness.md](portfolio-readiness.md) |
+| [x] 1 | Script seed 1 triệu tin vào 1 kênh *(`infra/perf/seed-messages.sh`, số đo trong [history.md](../perf/history.md))* | Chạy < 5 phút |
+| [x] 2 | `EXPLAIN ANALYZE` keyset vs `OFFSET` (NFR-003) | Bảng số liệu trong `docs/perf/history.md` |
+| [x] 3 | k6 `send-message.js` (NFR-001), `ws-fanout.js` (NFR-002) *(NFR-001 đạt; NFR-002 KHÔNG ĐẠT ở lần chạy cuối, nguyên nhân cold start còn mở, xem [ws-fanout.md](../perf/ws-fanout.md))* | Báo cáo p95, throughput, cấu hình máy trong `docs/perf/` |
+| [x] 4 | So sánh có/không cache quyền Redis | Số liệu p95 + số gRPC call/giây |
+| [x] 5 | Rate limit gửi tin (NFR-013) | k6 vượt ngưỡng → 429 |
+| [x] 6 | Dashboard "Nexus overview" + 3 alert đơn giản | JSON commit trong repo |
+| [x] 7 | Giới hạn bộ nhớ container (NFR-005) *(đo lúc rỗi: 3.09 GiB)* | `docker stats` tổng ≤ 6 GB |
+| 8 | README, ảnh trace, GIF, ADR hoàn chỉnh; demo công khai *(đã làm: README viết lại, [resilience.md](../perf/resilience.md), đo coverage; chưa làm: GIF, ảnh trace Tempo, deploy demo công khai, tài khoản demo seed sẵn, xem journal)* | Đạt [portfolio-readiness.md](portfolio-readiness.md) |
 
 ---
 

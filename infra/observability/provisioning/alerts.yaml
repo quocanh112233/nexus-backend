@@ -1,0 +1,59 @@
+# Ba alert của Nexus (D7) cho Grafana unified alerting, dùng contact point mặc định.
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: nexus
+    folder: Nexus
+    interval: 30s
+    rules:
+      - uid: nexus-outbox-backlog
+        title: OutboxBacklog
+        condition: C
+        for: 2m
+        noDataState: OK
+        execErrState: Error
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: {from: 600, to: 0}
+            model: {refId: A, instant: true, range: false, expr: 'nexus_outbox_pending'}
+          - refId: B
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, expression: A, reducer: last}
+          - refId: C
+            datasourceUid: __expr__
+            model: {refId: C, type: threshold, expression: B, conditions: [{evaluator: {type: gt, params: [100]}}]}
+      - uid: nexus-http-5xx-rate
+        title: Http5xxRate
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: {from: 600, to: 0}
+            model: {refId: A, instant: true, range: false, expr: 'sum by (service_name) (rate(http_server_requests_milliseconds_count{status=~"5.."}[5m])) / sum by (service_name) (rate(http_server_requests_milliseconds_count[5m]))'}
+          - refId: B
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, expression: A, reducer: last}
+          - refId: C
+            datasourceUid: __expr__
+            model: {refId: C, type: threshold, expression: B, conditions: [{evaluator: {type: gt, params: [0.05]}}]}
+      - uid: nexus-dead-letter-not-empty
+        title: DeadLetterNotEmpty
+        condition: C
+        for: 1m
+        noDataState: OK
+        execErrState: Error
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: {from: 600, to: 0}
+            model: {refId: A, instant: true, range: false, expr: 'sum by (queue) (rabbitmq_detailed_queue_messages_ready{queue=~".*\\.dlq"})'}
+          - refId: B
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, expression: A, reducer: last}
+          - refId: C
+            datasourceUid: __expr__
+            model: {refId: C, type: threshold, expression: B, conditions: [{evaluator: {type: gt, params: [0]}}]}

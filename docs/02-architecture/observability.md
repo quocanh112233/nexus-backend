@@ -47,11 +47,11 @@ Mục tiêu "log của 3 thành phần cho một request" chờ P4 (chưa có se
 | Circuit breaker | `resilience4j_circuitbreaker_state` | Resilience4j |
 | Consumer | `spring_rabbitmq_listener_seconds` (theo queue, kết quả) | Spring AMQP |
 | Outbox | `nexus_outbox_pending` (gauge số dòng chưa gửi), `nexus_outbox_publish_seconds` | Tự đo |
-| Queue | `rabbitmq_queue_messages_ready`, `..._unacked`, DLQ | RabbitMQ plugin |
+| Queue | `rabbitmq_detailed_queue_messages_ready` (nhãn `queue`, gồm cả `*.dlq`) | RabbitMQ plugin, endpoint `/metrics/detailed?family=queue_coarse_metrics` |
 | Nghiệp vụ | `nexus_messages_sent_total`, `nexus_ws_sessions` (gauge), `nexus_permission_cache_hits_total{result}` | Tự đo |
 | JVM | heap, GC, thread | Actuator |
 
-Dashboard "Nexus overview" (JSON commit tại `infra/observability/dashboards/`): tốc độ request + lỗi + p95 mỗi service; gRPC p95; trạng thái circuit breaker; outbox pending; độ dài queue + DLQ; số WebSocket session.
+Dashboard "Nexus overview" và 3 alert: xem mục 7.
 
 ## 4. Trace
 
@@ -83,4 +83,35 @@ Actuator chạy trên cổng quản trị riêng (`management.server.port`) khô
 
 ## 6. Phạm vi vừa sức
 
-Không làm: alerting phức tạp, SLO, log sampling. Có thể thêm 2-3 alert Grafana đơn giản (DLQ > 0, circuit breaker open, p95 > 500 ms) ở P9.
+Không làm: alerting phức tạp, SLO, log sampling. Chỉ có 3 alert đơn giản ở mục 7, chưa có kênh gửi.
+
+## 7. Dashboard và alert (P9)
+
+Mọi file nằm trong `infra/observability/` và được `infra/compose.infra.yaml` mount vào `otel-lgtm` (image `grafana/otel-lgtm:0.39.0`), nên khởi động lại container là có đủ, không cấu hình tay trong UI.
+
+| File | Mount vào | Vai trò |
+|------|-----------|---------|
+| `prometheus.yaml` | `/otel-lgtm/prometheus.yaml` (thay bản gốc) | Bản gốc của image kèm job `rabbitmq` scrape `rabbitmq:15692/metrics/detailed?family=queue_coarse_metrics` mỗi 15 giây; cổng 15692 chỉ có trong network compose, không publish ra host |
+| `dashboards/nexus-overview.json` | `/otel-lgtm/nexus-overview.json` | Dashboard `nexus-overview`, biến `service` (`service_name`, multi, mặc định All) |
+| `provisioning/dashboards.yaml` | `/otel-lgtm/grafana/conf/provisioning/dashboards/nexus.yaml` | Provider nạp file JSON trên |
+| `provisioning/alerts.yaml` | `/otel-lgtm/grafana/conf/provisioning/alerting/nexus.yaml` | Nhóm `nexus` (folder `Nexus`, đánh giá mỗi 30 giây) |
+
+Plugin `rabbitmq_prometheus` đã bật sẵn trong image `rabbitmq:4-management-alpine`. Endpoint `/metrics` mặc định chỉ trả số tổng không có nhãn `queue`; số liệu từng queue phải lấy ở `/metrics/detailed` và có tên `rabbitmq_detailed_queue_messages_ready`.
+
+Panel (đều lọc theo biến `service` nếu có nhãn `service_name`): request/giây, HTTP p95, tỉ lệ 5xx, outbox pending, độ sâu từng queue, DLQ, tỉ lệ hit cache quyền, heap JVM. Nhãn thật trên Prometheus: `status` (không phải `http_response_status_code`), `area` (không phải `jvm_memory_type`), `queue`.
+
+| Alert | Điều kiện | Giữ trong |
+|-------|-----------|-----------|
+| `OutboxBacklog` | `nexus_outbox_pending > 100` | 2 phút |
+| `Http5xxRate` | tỉ lệ `status=~"5.."` > 5% trên bất kỳ service | 5 phút |
+| `DeadLetterNotEmpty` | `rabbitmq_detailed_queue_messages_ready{queue=~".*\\.dlq"} > 0` | 1 phút |
+
+`noDataState: OK`: không có series (chưa có lỗi 5xx, chưa có queue) nghĩa là không báo. Tỉ lệ 5xx dùng `rate()` nên lần 5xx đầu tiên của một service chưa có series 5xx không được tính.
+
+Kiểm thật trên stack `nexus-perf` (2026-11-16, OTLP bật): dừng `rabbitmq` lúc 22:19:10 rồi chạy k6 gửi tin 2 phút; `nexus_outbox_pending` của `messaging-service` lên 1350, 4300, 5950 (gauge chỉ cập nhật mỗi ~60 giây), `OutboxBacklog` sang `pending` khoảng 22:20:30 và `firing` lúc 22:22:22. Bật lại `rabbitmq` lúc 22:23:20, outbox về 0 lúc 22:24:47 và alert hết `firing` trước 22:25:19.
+
+Lưu ý khi vận hành:
+
+- Metric ứng dụng đến Prometheus qua OTLP mỗi ~60 giây nên cửa sổ `rate()` phải từ 2 phút trở lên; `rate(...[1m])` luôn rỗng.
+- API `/api/prometheus/grafana/api/v1/alerts` của bản Grafana này gọi trạng thái báo động là `Alerting`, không phải `firing`; lọc `select(.state=="firing")` sẽ luôn ra 0. Dùng `/api/prometheus/grafana/api/v1/rules` (trường `state`) hoặc lọc `Alerting`.
+- Khi `rabbitmq` dừng, endpoint scrape chết, `DeadLetterNotEmpty` không còn dữ liệu nên chuyển về `OK` do `noDataState: OK` (DLQ đang có message vẫn không báo trong lúc broker sập); `OutboxBacklog` mới là alert bắt tình huống đó.

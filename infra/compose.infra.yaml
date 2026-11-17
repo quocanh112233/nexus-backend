@@ -17,6 +17,9 @@ services:
       test: ["CMD-SHELL", "pg_isready -U postgres -d nexus"]
       interval: 5s
       retries: 10
+    deploy:
+      resources:
+        limits: { memory: 768m }
   redis:
     image: redis:7-alpine
     ports: ["127.0.0.1:${REDIS_PORT:-6379}:6379"]
@@ -24,6 +27,9 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       retries: 10
+    deploy:
+      resources:
+        limits: { memory: 128m }
   rabbitmq:
     image: rabbitmq:4-management-alpine
     environment:
@@ -35,10 +41,21 @@ services:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
       retries: 10
+    deploy:
+      resources:
+        limits: { memory: 512m }
   # Grafana, Loki, Tempo, Prometheus và OTel Collector trong một container; chỉ chạy với --profile observability
   otel-lgtm:
     image: grafana/otel-lgtm:0.39.0
     profiles: ["observability"]
     ports: ["127.0.0.1:3001:3000", "127.0.0.1:4317:4317", "127.0.0.1:4318:4318"]
+    volumes:
+      - ./observability/prometheus.yaml:/otel-lgtm/prometheus.yaml:ro
+      - ./observability/dashboards/nexus-overview.json:/otel-lgtm/nexus-overview.json:ro
+      - ./observability/provisioning/dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/nexus.yaml:ro
+      - ./observability/provisioning/alerts.yaml:/otel-lgtm/grafana/conf/provisioning/alerting/nexus.yaml:ro
+    deploy:
+      resources:
+        limits: { memory: 1g }
 volumes:
   pgdata:

@@ -93,6 +93,7 @@ services:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_USER: ${RABBITMQ_ADMIN_USER:?}
       RABBITMQ_PASSWORD: ${RABBITMQ_ADMIN_PASSWORD:?}
+      PERMISSION_CACHE_ENABLED: ${PERMISSION_CACHE_ENABLED:-true}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_ENDPOINT:-}
     depends_on:
       postgres: { condition: service_healthy }
@@ -199,6 +200,7 @@ services:
       REDIS_HOST: redis
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_ENDPOINT:-}
+      RATELIMIT_ENABLED: ${RATELIMIT_ENABLED:-true}
     # Cổng duy nhất publish ra host; các service còn lại chỉ truy cập được qua gateway
     ports: ["127.0.0.1:8080:8080"]
     depends_on:

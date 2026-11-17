@@ -11,15 +11,15 @@ flowchart LR
 
     subgraph Edge["Biên"]
         GW["api-gateway :8080"]
-        RT["realtime-gateway :8086"]
+        RT["realtime-gateway :8084"]
     end
 
     subgraph Services["Domain services"]
         ID["identity-service :8081 / gRPC 9091"]
         CM["community-service :8082 / gRPC 9092"]
         MS["messaging-service :8083 / gRPC 9093"]
-        PR["presence-service :8084"]
-        NT["notification-service :8085"]
+        PR["presence-service :8085"]
+        NT["notification-service :8086"]
     end
 
     subgraph Infra["Hạ tầng"]
