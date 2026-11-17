@@ -38,18 +38,22 @@ export const options = {
 // Tự kiểm lib/stomp.js và lấy id tin mới nhất của kênh làm mốc: tin sau mốc này là tin của lần chạy
 export function setup() {
   selfCheck();
+  verifySelfCheck();
   const res = http.get(`${MESSAGES_URL}?limit=1`, { headers: authHeaders(0) });
   if (res.status !== 200 || res.json().length !== 1) throw new Error(`không lấy được tin mốc: ${res.status}`);
   return { startId: res.json()[0].id };
 }
 
-// Đọc mọi tin sau mốc (tăng dần, trang 100) có nội dung "fanout ", tức các tin senders đã gửi trong lần chạy này
-function runMessages(startId, userIndex) {
+// Đọc mọi tin sau mốc (tăng dần, trang 100) có nội dung "fanout "; trả null nếu bất kỳ trang lịch sử nào không phải 200 để bước đối chiếu không dùng dữ liệu thiếu
+function runMessages(startId, userIndex, get = http.get) {
   const out = [];
   let after = startId;
   for (;;) {
-    const res = http.get(`${MESSAGES_URL}?after=${after}&limit=100`, { headers: authHeaders(userIndex), tags: { name: 'verify' } });
-    if (!check(res, { 'verify: lịch sử 200': (r) => r.status === 200 })) return out;
+    const res = get(`${MESSAGES_URL}?after=${after}&limit=100`, { headers: authHeaders(userIndex), tags: { name: 'verify' } });
+    if (res.status !== 200) {
+      console.error(`listener ${userIndex}: đối chiếu lịch sử lỗi ${res.status}, không tính listener này là đã đối chiếu`);
+      return null;
+    }
     const page = res.json();
     out.push(...page.filter((m) => m.content.startsWith('fanout ')));
     if (page.length < 100) return out;
@@ -57,7 +61,19 @@ function runMessages(startId, userIndex) {
   }
 }
 
-// Listener: user riêng mở STOMP, subscribe kênh, đo độ trễ mỗi MessageCreated "fanout ", cuối bài đối chiếu với lịch sử để tính tỉ lệ giao và đếm listener đối chiếu xong (LISTENER_OFFSET chỉ để thử listener chết)
+// Tự kiểm runMessages bằng API giả: lỗi ở trang đầu hoặc trang sau đều phải trả null, đủ trang thì trả đúng tin "fanout "; sai thì dừng bài đo
+function verifySelfCheck() {
+  const full = Array.from({ length: 100 }, (_, i) => ({ id: `m${i}`, content: `fanout 0-${i}` }));
+  const last = [{ id: 'x', content: 'fanout 0-100' }, { id: 'y', content: 'khác' }];
+  const pages = (list) => { let i = 0; return () => list[i++]; };
+  const ok = (body) => ({ status: 200, json: () => body });
+  const firstFails = runMessages('s', 0, pages([{ status: 503 }]));
+  const laterFails = runMessages('s', 0, pages([ok(full), { status: 503 }]));
+  const complete = runMessages('s', 0, pages([ok(full), ok(last)]));
+  if (firstFails !== null || laterFails !== null || !complete || complete.length !== 101) throw new Error('runMessages tự kiểm sai');
+}
+
+// Listener: user riêng mở STOMP, subscribe kênh, đo độ trễ mỗi MessageCreated "fanout ", cuối bài đối chiếu với lịch sử để tính tỉ lệ giao và chỉ đếm listener khi đọc đủ mọi trang lịch sử (LISTENER_OFFSET chỉ để thử listener chết)
 export function listener(data) {
   const userIndex = exec.scenario.iterationInTest + LISTENER_OFFSET;
   const got = new Set();
@@ -99,8 +115,11 @@ export function listener(data) {
       'listener: không có STOMP ERROR': () => !stompError,
       'listener: giữ kết nối tới hết bài': () => !closedEarly,
     });
-    runMessages(data.startId, userIndex).forEach((m) => delivery.add(got.has(m.id)));
-    listenersVerified.add(1);
+    const expected = runMessages(data.startId, userIndex);
+    if (expected) {
+      expected.forEach((m) => delivery.add(got.has(m.id)));
+      listenersVerified.add(1);
+    }
     ws.close();
   }, HOLD_MS);
 }
